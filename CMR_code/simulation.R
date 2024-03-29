@@ -22,12 +22,12 @@ Ns.names = "1" #c("0.5","1","1.5","3")
 Ks = c(1,3,5,7)
 ####################################
 
-print("Running the following scenario: ",
-	       "cov: ", cov.method,
-	       "; p: ", p,
-	       "; Ns: ", Ns,
-	       "; Ks: ", Ks,
-	       "!!!!!!!!!!!!")
+print(paste0("Running the following scenario: ",
+             "cov: ", cov.method,
+             "; p: ", p,
+             "; Ns: (", paste0(Ns, collapse = ","),
+             "); Ks: (", paste0(Ks, collapse = ","),
+             ") !!!!!!!!!!!!"))
 
 ####################################
 ## gibbs sampler variables
