@@ -5,7 +5,7 @@ library(doParallel)
 
 ####################################
 ## helpers
-on.server = FALSE
+on.server = TRUE
 cov.method = "eye" ## options: eye, cor9
 identifier = "p8"
 ####################################
@@ -16,18 +16,25 @@ identifier = "p8"
 # number of variables
 p = 8
 # sample sizes to loop through
-Ns = c(round(p/2),p+2,round(p*1.5),p*3)
-Ns.names = c("0.5","1","1.5","3")
+Ns = p+2 # c(round(p/2),p+2,round(p*1.5),p*3)
+Ns.names = "1" #c("0.5","1","1.5","3")
 # low dimension
 Ks = c(1,3,5,7)
 ####################################
 
+print("Running the following scenario: ",
+	       "cov: ", cov.method,
+	       "; p: ", p,
+	       "; Ns: ", Ns,
+	       "; Ks: ", Ks,
+	       "!!!!!!!!!!!!")
+
 ####################################
 ## gibbs sampler variables
-S = 10000
+S = 600# 10000
 burnin = 500
 # number of simulation replicates
-sim = 25
+sim = 2 #25
 ####################################
 
 ####################################
@@ -149,7 +156,9 @@ for ( n.ind in 1:length(Ns) ){
   temp.loss = Reduce("+",parallel.out[1,])/S
   loss.avg[n.ind,] = temp.loss/min(temp.loss)
   toc.avg[n.ind,] = Reduce("+",parallel.out[2,])/S
-  
+
+  print(paste0("Finished running the scenario for N = ", n,"!!!!!!!!!"))
+
 }
 
 colnames(loss.avg) = colnames(toc.avg) = names(parallel.out[1,][[1]])
@@ -157,9 +166,14 @@ rownames(loss.avg) = rownames(toc.avg) = paste0("N",Ns.names)
 
 ####################################
 
+
+print("Saving output now !!!")
+
+
 ####################################
 ## save output
 output.filename = paste0("./output/SIM_",suffix,".Rdata")
 save(loss.avg,toc.avg,file = output.filename)
 ####################################
 
+print(paste0("Saved output to: ", output.filename))
