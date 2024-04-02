@@ -7,7 +7,7 @@ library(doParallel)
 ## helpers
 on.server = TRUE
 cov.method = "comSym3groups" ## options: eye, cor9, comSym3groups
-identifier = "p8_groupX"
+identifier = "p8"
 ####################################
 
 ####################################
@@ -16,8 +16,8 @@ identifier = "p8_groupX"
 # number of variables
 p = 8
 # sample sizes to loop through
-Ns = p+2 # c(round(p/2),p+2,round(p*1.5),p*3)
-Ns.names = "1" #c("0.5","1","1.5","3")
+Ns =  c(round(p/2),p+2,round(p*1.5),p*3)
+Ns.names = c("0.5","1","1.5","3")
 # low dimension
 Ks = c(1,3,5,7)
 ####################################
@@ -39,6 +39,12 @@ burnin = 500
 sim = 25
 ####################################
 
+print(paste0("Using the following GS values:",
+		    " S: ",S,
+		    "; burnin: ", burnin,
+		    "; sims: ",sim,
+		    "!!!!!!!!!!!!!"))
+
 ####################################
 ## have correct path to read in R functions
 if (on.server == T){
@@ -54,7 +60,7 @@ if (on.server == T){
 if (cov.method == "eye"){
   true.cov = eye(p)
 } else if (cov.method == "cor9"){
-  true.cov = cor.mat(0.9)
+  true.cov = cor.mat(p,0.9)
 } else if (cov.method == "comSym3groups"){
   
   p_l = round(c(4,6,8)/sum(4,6,8)*p)
@@ -79,7 +85,7 @@ if (cov.method == "eye"){
   for ( pl.ind in 1:length(p_l)){
     X[which_group==pl.ind,pl.ind] = 1
   }
-  
+    
 }
 # propagate filename suffix
 suffix = cov.method
