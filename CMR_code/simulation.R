@@ -6,8 +6,8 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = TRUE
-cov.method = "eye" ## options: eye, cor9, comSym3groups
-identifier = "p8"
+cov.method = "comSym3groups" ## options: eye, cor9, comSym3groups
+identifier = "p8_groupX"
 ####################################
 
 ####################################
@@ -29,12 +29,14 @@ print(paste0("Running the following scenario: ",
              "); Ks: (", paste0(Ks, collapse = ","),
              ") !!!!!!!!!!!!"))
 
+X = NA
+
 ####################################
 ## gibbs sampler variables
-S = 600# 10000
+S = 10000
 burnin = 500
 # number of simulation replicates
-sim = 2 #25
+sim = 25
 ####################################
 
 ####################################
@@ -71,6 +73,13 @@ if (cov.method == "eye"){
   cov = cov + eye(p)
   true.cov = cov2cor(cov)
   eigen(true.cov)$val ## check invertible
+
+  # get design matrix
+  X = matrix(0, nrow = p, ncol = length(p_l))
+  for ( pl.ind in 1:length(p_l)){
+    X[which_group==pl.ind,pl.ind] = 1
+  }
+  
 }
 # propagate filename suffix
 suffix = cov.method
@@ -111,7 +120,7 @@ for ( n.ind in 1:length(Ns) ){
     ####################################
     ## run CMR GS
     for ( k.ind in 1:length(Ks) ){
-      out.cmr  = CMR_GS(Y,
+      out.cmr  = CMR_GS(Y,X,
                         k = Ks[k.ind],
                         S = S,
                         burnin = burnin,
