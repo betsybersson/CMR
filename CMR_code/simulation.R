@@ -6,7 +6,7 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = TRUE
-cov.method = "eye" ## options: eye, cor9
+cov.method = "eye" ## options: eye, cor9, comSym3groups
 identifier = "p8"
 ####################################
 
@@ -53,8 +53,26 @@ if (cov.method == "eye"){
   true.cov = eye(p)
 } else if (cov.method == "cor9"){
   true.cov = cor.mat(0.9)
+} else if (cov.method == "comSym3groups"){
+  
+  p_l = round(c(4,6,8)/sum(4,6,8)*p)
+  L = length(p_l)
+  p = sum(p_l)
+  which_group = rep(1:L,times = p_l)
+  
+  lam = c(1,0,1,1)
+  Lam = matrix(rep(lam,p_l[1]),nrow=p_l[1],byrow=T)
+  lam2 = c(0,0,0,1)
+  Lam2 = matrix(rep(lam2,p_l[2]),nrow=p_l[2],byrow=T)
+  lam3 = c(1,4,0,0)
+  Lam3 = matrix(rep(lam3,p_l[3]),nrow=p_l[3],byrow=T)
+  Lam = rbind(Lam,Lam2,Lam3)
+  cov = Lam %*% t(Lam)
+  cov = cov + eye(p)
+  true.cov = cov2cor(cov)
+  eigen(true.cov)$val ## check invertible
 }
-# propogate filename suffix
+# propagate filename suffix
 suffix = cov.method
 if (identifier != ""){
   suffix = paste0(suffix,"_",identifier)
