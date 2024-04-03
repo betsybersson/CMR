@@ -6,7 +6,7 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = TRUE
-cov.method = "comSym3groups" ## options: eye, cor9, comSym3groups
+cov.method = "cor9" ## options: eye, cor9, comSym3groups
 identifier = "p8"
 ####################################
 
@@ -97,7 +97,7 @@ if (identifier != ""){
 ####################################
 ## run simulation
 cores = detectCores()
-loss.avg = toc.avg = matrix(NA,ncol = length(Ks)*2 + 2, nrow = length(Ns))
+loss.avg = toc.avg = c() #matrix(NA,ncol = length(Ks)*2 + 2, nrow = length(Ns))
 for ( n.ind in 1:length(Ns) ){
     
   n = Ns[n.ind]
@@ -146,11 +146,28 @@ for ( n.ind in 1:length(Ns) ){
                         S = S,
                         burnin = burnin,
                         my.seed = sim.ind + 200)
-      output[[k.ind + length(Ks)]] = qr.solve(matrix(colMeans(out.lfm$cov.inv),ncol = p)) ## stein estimator
-      toc[[k.ind + length(Ks)]]  = out.lfm$runtime
+      output[[length(output)+1]] = qr.solve(matrix(colMeans(out.lfm$cov.inv),ncol = p)) ## stein estimator
+      toc[[length(toc)+1]]  = out.lfm$runtime
     }
     # name based on value of K
     names(output)[-c(1:length(Ks))] = names(toc)[-c(1:length(Ks))] = paste0("lfm.K",Ks)
+    ####################################
+    
+    ####################################
+    ## run intercept CMR GS if you haven't
+    if (!all(is.na(X))){
+      for ( k.ind in 1:length(Ks) ){
+        out.cmr  = CMR_GS(Y,X = NA,
+                          k = Ks[k.ind],
+                          S = S,
+                          burnin = burnin,
+                          my.seed = sim.ind + 100)
+        output[[length(output)+1]] = qr.solve(matrix(colMeans(out.cmr$cov.inv),ncol = p)) ## stein estimator
+        toc[[length(toc)+1]]  = out.cmr$runtime
+      }
+      # name based on value of K
+      names(output)[-c(1:(2*length(Ks)))] = names(toc) = paste0("cmr.K",Ks,".intercept")
+    }
     ####################################
     
     ####################################
@@ -187,8 +204,8 @@ for ( n.ind in 1:length(Ns) ){
   stopCluster(cl)
   
   temp.loss = Reduce("+",parallel.out[1,])/S
-  loss.avg[n.ind,] = temp.loss/min(temp.loss)
-  toc.avg[n.ind,] = Reduce("+",parallel.out[2,])/S
+  loss.avg = rbind(loss.avg,temp.loss)
+  toc.avg = rbind(toc.avg,Reduce("+",parallel.out[2,])/S)
 
   print(paste0("Finished running the scenario for N = ", n,"!!!!!!!!!"))
 
