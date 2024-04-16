@@ -6,18 +6,18 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = TRUE
-cov.method = "cor9" ## options: eye, cor9, comSym3groups
-identifier = "p8"
+cov.method = "kron" ## options: eye, cor9, comSym3groups, kron
+identifier = "p9"
 ####################################
 
 ####################################
 ## problem dimension parameters
 
 # number of variables
-p = 8
+p = 9
 # sample sizes to loop through
-Ns =  c(round(p/2),p+2,round(p*1.5),p*3)
-Ns.names = c("0.5","1","1.5","3")
+Ns =  c(p+2,round(p*1.5),p*3) # round(p/2),
+Ns.names = c("1","1.5","3") #"0.5",
 # low dimension
 Ks = c(1,3,5,7)
 ####################################
@@ -50,7 +50,7 @@ print(paste0("Using the following GS values:",
 if (on.server == T){
   source("betsy_R_functions.R")
 } else {
-  source("/Users/betsybersson/Documents/betsy_R_functions.R")
+  source("/Users/betsybersson/Documents/Betsy_R_functions.R")
 }
 ####################################
 
@@ -86,6 +86,19 @@ if (cov.method == "eye"){
     X[which_group==pl.ind,pl.ind] = 1
   }
     
+} else if (cov.method == "kron"){
+  p1 = round(p/3)
+  p2 = round(p/p1)
+  p = p1*p2
+  
+  R = cor.mat(p1,.7)
+  C = cor.mat(p2,.2)
+  true.cov = kronecker(C,R)
+  eigen(true.cov)$val ## check invertible
+  
+  # get design matrix
+  X = getMatDesignMat(p1,p2)
+  
 }
 # propagate filename suffix
 suffix = cov.method
@@ -167,6 +180,24 @@ for ( n.ind in 1:length(Ns) ){
       }
       # name based on value of K
       names(output)[-c(1:(2*length(Ks)))] = names(toc) = paste0("cmr.K",Ks,".intercept")
+    }
+    ####################################
+    
+    ####################################
+    ## run intercept kron stuff if matrix-variate data
+    if (cov.method == "kron"){
+      # get kron MLE from data
+      cov.kron.temp = cov.kron.mle(vec.inv.array(Y,p1,p2),
+                                   de.meaned = T,my.seed = sim.ind + 400)
+      output$kron.mle = cov.kron.temp$Cov
+      toc$kron.mle = cov.kron.temp$runtime
+      
+      # # shrink to kron
+      # kron.shrink.temp = ShrinkSep_GS(Y,p1,p2,
+      #                                 S = S,burnin = burnin,
+      #                                 my.seed = sim.ind + 500)
+      # output$kron.shrinkage = qr.solve(matrix(colMeans(kron.shrink.temp$cov.inv),ncol = p)) ## stein estimator
+      # toc$kron.shrinkage = kron.shrink.temp$runtime
     }
     ####################################
     

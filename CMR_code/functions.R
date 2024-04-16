@@ -12,7 +12,8 @@ library(LaplacesDemon) # for dmvt (multivariate Student's t) for cusp
 # thin: thinning mechanism
 # save.all: logical to determine what parameters to return. If 0, save subset 
 #       of params post thin/burnin. If 1, save and return all iterations 
-#       of all parameters.
+#       of all parameters. If ICO, save and return only the sum of the inverted 
+#       sampling covariance estimate (useful if large p,n)
 ## optional parameters
 # 
 ##########################################################
@@ -71,17 +72,22 @@ CMR_GS = function(Y,X = NA,
   ## create storage 
   if (save.all == 1){
     n.save.out = S
-  } else if (save.all == 0) {
+  } else if (save.all == 0 | save.all == "ICO") {
     len.out = length(seq(from = burnin+1, to = S, by = thin))
     n.save.out = len.out
     index = 1  
+  } 
+  if (save.all == "ICO"){
+    cov.inv.out = cov.inv.det.out = 0
+  } else {
+    cov.out = cov.inv.out = array(NA,dim = c(n.save.out,p*p))
+    Lambda.out = array(NA,dim = c(n.save.out,p*k))
+    eta.out = array(NA,dim=c(n.save.out, k*n))
+    ds.out = array(NA,dim=c(n.save.out,p))
+    Gamma.out = array(NA,dim=c(n.save.out,(q)*k))
+    vars.out = array(NA,dim=c(n.save.out,2)) #for tau2 and xi2
   }
-  cov.out = cov.inv.out = array(NA,dim = c(n.save.out,p*p))
-  Lambda.out = array(NA,dim = c(n.save.out,p*k))
-  eta.out = array(NA,dim=c(n.save.out, k*n))
-  ds.out = array(NA,dim=c(n.save.out,p))
-  Gamma.out = array(NA,dim=c(n.save.out,(q)*k))
-  vars.out = array(NA,dim=c(n.save.out,2)) #for tau2 and xi2
+  
   ###########################
   
   ###########################
@@ -161,7 +167,7 @@ CMR_GS = function(Y,X = NA,
         
         index = index + 1
       }
-    } else {
+    } else if (save.all == 1){
       cov.temp = Lambda %*% t(Lambda) + D
       cov.inv.temp = qr.solve(cov.temp)
       
@@ -172,6 +178,11 @@ CMR_GS = function(Y,X = NA,
       ds.out[s,] = c(ds)
       Gamma.out[s,] = c(Gamma)
       vars.out[s,] = c(tau2,xi2) #for tau2 and xi2
+    } else if (save.all == "ICO"){
+      cov.temp = Lambda %*% t(Lambda) + D
+
+      cov.inv.out = cov.inv.out + c(qr.solve(cov.temp))
+      cov.inv.det.out = cov.inv.det.out + det(cov.temp)
     }
     
   } # end GS iteration
@@ -180,17 +191,22 @@ CMR_GS = function(Y,X = NA,
   
   ###########################
   ## put output in list and save to function
-  colnames(vars.out) = c("tau2","xi2")
-  
-  func.out = list("cov" = cov.out,"cov.inv" = cov.inv.out,
-                  "Lambda" = Lambda.out,
-                  "eta" = eta.out,
-                  "D" = ds.out,
-                  "Gamma" = Gamma.out,
-                  "vars" = vars.out,
-                  "runtime" = runtime)
-  if (save.all == 1){
-    func.out = func.out #c(func.out,list("out2" = out2))
+  if (save.all == 0 | save.all == 1){
+    colnames(vars.out) = c("tau2","xi2")
+    
+    func.out = list("cov" = cov.out,"cov.inv" = cov.inv.out,
+                    "Lambda" = Lambda.out,
+                    "eta" = eta.out,
+                    "D" = ds.out,
+                    "Gamma" = Gamma.out,
+                    "vars" = vars.out,
+                    "runtime" = runtime)
+    if (save.all == 1){
+      func.out = func.out #c(func.out,list("out2" = out2))
+    }
+  } else if (save.all == "ICO"){
+    func.out = list("cov.inv.mean" = cov.inv.out/n.save.out,
+                    "cov.inv.det.mean" = cov.inv.det.out/n.save.out)
   }
   
   set.seed(Sys.time())
@@ -262,7 +278,6 @@ LFM_GS = function(Y,
   
   ###########################
   ## global helpers
-  
   ###########################
   
   ###########################
@@ -513,3 +528,254 @@ cusp_factor_adapt <- function(y,my_seed,N_sampl,alpha,a_sig,b_sig,a_theta,b_thet
   
   return(output)
 }
+##########################################################
+### CMR Function: get design matrix for matrix-variate data structure
+# for matrix variate data Y_i (p1 x p2) <=> multivariate data y_i (p1*p2 x 1)
+# p1: row dimension of matrix-variate data
+# p2: column dimension of matrix-variate data
+# output: X (p1*p2) x (p1+p2) design matrix indicating row/column group membership of each of the (p1*p2) variables
+##########################################################
+getMatDesignMat = function(p1,p2){
+  
+  p = p1*p2
+  
+  X.R = matrix(0,nrow = p, ncol = p1)
+  X.C = matrix(0,nrow = p, ncol = p2)
+  colnames(X.R) = paste0("R",1:p1)
+  colnames(X.C) = paste0("C",1:p2)
+  Y.temp = matrix(0,nrow = p1, ncol = p2)
+  for ( j in 1:p1 ){
+    Y.temp[j,] = 1
+    X.R[,j] = c(Y.temp)
+    Y.temp = Y.temp * 0
+  }
+  for ( j in 1:p2 ){
+    Y.temp[,j] = 1
+    X.C[,j] = c(Y.temp)
+    Y.temp = Y.temp * 0
+  }
+  
+  X = cbind(X.R,X.C)
+  
+  return(X)
+}
+##########################################################
+### Un-vectorize matrix-variate data 
+# input: x: n x p1p2 matrix
+# for- p1: row dimension of matrix-variate data
+#      p2: column dimension of matrix-variate data
+#      n: number of samples
+# output: X: p1 x p2 x n array 
+##########################################################
+vec.inv.array = function(x,p1,p2){
+  
+  N = nrow(x)
+  XX = array(NA,dim=c(p1,p2,N))
+  
+  for ( nn in 1:N ){
+    XX[,,nn] = matrix(x[nn,],ncol=p2,nrow=p1)
+  }
+  
+  return(XX)
+  
+}
+##########################################################
+### Separable covariance MLE
+## block coordinate descent algorithm
+# X: p1 x p2 x n array, de-meaned
+# output: Psi p1 x p1 row covariance
+# output: Sig p2 x p2 column covariance
+# de.meaned: logical. If de.meaned = true, use n-1 instead of n in degrees of freedom on S
+##########################################################
+cov.kron.mle = function(X,itmax = 100,eps = 1e-5,
+                        de.meaned = F, my.seed = Sys.time()){
+  
+  set.seed(my.seed)
+  
+  p1 = dim(X)[1]
+  p2 = dim(X)[2]
+  N = dim(X)[3] # since removing mean
+  
+  if (de.meaned == T){
+    N = N-1
+  }
+  
+  # initialize sig tilde
+  Sig.tilde = matrix(rowMeans(apply(X,3,cov.mle)),ncol = p2)
+  Sig.tilde.inv = solve(Sig.tilde)
+  
+  # initialize stopping checks
+  Psi.tilde = Psi.tilde.old = matrix(0,ncol = p1,nrow = p1)
+  Sig.tilde.old = matrix(0,ncol = p2, nrow = p2)
+  check = F
+  it = 0
+  tic = Sys.time()
+  while((check == FALSE) & (it < itmax)){
+    
+    Psi.tilde = matrix(rowSums(apply(X,3,function(KK)KK %*% Sig.tilde.inv %*% t(KK))),
+                       ncol = p1)/(N*p2)
+    Psi.tilde.inv = solve(Psi.tilde)
+    
+    Sig.tilde = matrix(rowSums(apply(X,3,function(KK)t(KK) %*% Psi.tilde.inv %*% KK)),
+                       ncol = p2)/(N*p1)
+    Sig.tilde.inv = solve(Sig.tilde)
+    
+    if (all(abs(Sig.tilde.old-Sig.tilde)<eps) &
+        all(abs(Psi.tilde.old-Psi.tilde)<eps)){
+      check = TRUE
+    }
+    
+    # update for next iteration in while loop
+    it = it+1 
+    Psi.tilde.old = Psi.tilde
+    Sig.tilde.old = Sig.tilde
+    
+  }
+  
+  runtime = difftime(Sys.time(),tic,units = "secs")
+  
+  set.seed(Sys.time())
+  
+  return(list("Psi" = Psi.tilde,"Sigma" = Sig.tilde,
+              "Cov" = kronecker(Sig.tilde,Psi.tilde),
+              "it" = it, "runtime" = runtime))
+  
+}
+###########################
+## Latent factor model (basic)
+# latent factor drawn from mean 0 normal distribution
+### TO DO- CHANGE THE SAMPLING OF THE WISHART DF- do random walk
+###########################
+ShrinkSep_GS = function(Y,p1,p2,
+                  S = 5100,
+                  burnin = 100,
+                  thin = 1,
+                  save.all = 0,
+                  my.seed = Sys.time()){
+  
+  set.seed(my.seed)
+  
+  ###########################
+  ## set hyper params
+  p = ncol(Y)
+  n = nrow(Y)
+  
+  ## IG shape/rate parameters
+  eta1 = p1+2; eta2 = p2+2
+  S1 = eye(p1); S1.inv = solve(S1)
+  S2 = eye(p2); S2.inv= solve(S2)
+  
+  nu.domain = c((p+2):round(2.5*p)); ND = length(nu.domain)
+  
+  eta1.domain = c((p1+2):(p1+10))
+  eta2.domain = c((p2+2):(p2+10))
+  ED = length(eta1.domain)
+  ###########################
+  
+  ###########################
+  ## initialize values
+  V1 = V1.inv = eye(p1)
+  V2 = V2.inv = eye(p2)
+  
+  nu = p+3
+  Sig = Sig.inv = eye(p)
+  ###########################
+  
+  ###########################
+  ## create storage 
+  if (save.all == 1){
+    n.save.out = S
+  } else if (save.all == 0) {
+    len.out = length(seq(from = burnin+1, to = S, by = thin))
+    n.save.out = len.out
+    index = 1  
+  }
+  Sig.out = Sig.inv.out = array(NA,dim = c(n.save.out,p*p))
+  nu.out = array(NA,dim=c(n.save.out))
+  V1.out = array(NA,dim = c(n.save.out,p1*p1))
+  V2.out = array(NA,dim = c(n.save.out,p2*p2))
+  ###########################
+  
+  ###########################
+  ## global helpers
+  Si = t(Y) %*% Y
+  ###########################
+  
+  ###########################
+  ## GS
+  tic = Sys.time()
+  for ( s in 1:S ){
+    
+    ## sample Sigi
+    Vi = kronecker(V2,V1)
+    Mi = qr.solve(Si + (nu-p-1) * Vi)
+    Sig.inv = rwish(Mi, nu + n)
+    Sig = qr.solve(Sig.inv)
+    
+    ## sample nu - uniform on nu.domain
+    #### UNSTABLE
+    Vi.inv = kronecker(V2.inv,V1.inv)
+    d.sig = sapply(nu.domain,function(k)
+      dinvwish.proptonu(Sig,k,Vi.inv/(k - p - 1),T) )
+    probs = d.sig/sum(d.sig)
+    nu = sample(nu.domain,size = 1,prob = probs)
+    
+    ## sample V1
+    Sig.inv.chol = t(chol(Sig.inv))
+
+    Li = array(Sig.inv.chol,dim=c(p1,p2,p)) # checked- should be correct
+    Mi.helper = lapply(1:p,function(k) Li[,,k] %*% t(V2) %*% t(Li[,,k]))
+    Mi = qr.solve(Reduce('+',Mi.helper)*(nu-p-1) + S1.inv * eta1)
+    V1 = rwish(Mi,eta1 + nu * p2)
+    V1.inv = qr.solve(V1)
+    
+    ## sample V2
+    Mi.helper = lapply(1:p,function(k) t(Li[,,k]) %*% t(V1) %*% Li[,,k])
+    Mi = qr.solve(Reduce('+',Mi.helper)*(nu-p-1) + S2.inv * eta2)
+    V2 = rwish(Mi,eta2 + nu * p1)
+    V2.inv = qr.solve(V2)
+    
+    ## store output
+    Sig.out[s,] = unlist(Sig)
+    nu.out[s,] = nu
+    V1.out[s,] = unlist(V1)
+    V2.out[s,] = unlist(V2)
+    
+    ## save output
+    if (save.all == 0){
+      if ((s>burnin)&((s %% thin)==0)){
+        
+        Sig.out[index,] = c(Sig)
+        Sig.inv.out[index,] = c(Sig.inv)
+        nu.out[index] = nu
+        V1.out[index,] = c(V1)
+        V2.out[index,] = c(V2)
+        
+        index = index + 1
+      }
+    } else {
+
+      Sig.out[s,] = c(Sig)
+      Sig.inv.out[s,] = c(Sig.inv)
+      nu.out[s] = nu
+      V1.out[s,] = c(V1)
+      V2.out[s,] = c(V2)
+    }
+    
+  } # end GS iteration
+  ###########################
+  runtime = difftime(Sys.time(),tic,units = "secs")
+  
+  ###########################
+  ## put output in list and save to function
+  
+  func.out = list("cov" = Sig.out,"cov.inv" = Sig.inv.out,
+                  "runtime" = runtime)
+  
+  
+  set.seed(Sys.time())
+  
+  return(func.out)
+  ###########################
+  
+} # end function
