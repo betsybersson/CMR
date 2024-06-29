@@ -1,4 +1,5 @@
 source("functions.R")
+source("Schiavon_SISGaussian.R")
 library(parallel)
 library(doParallel)
 ####################################
@@ -16,10 +17,13 @@ identifier = "p9"
 # number of variables
 p = 9
 # sample sizes to loop through
-Ns =  c(p+2,round(p*1.5),p*3) # round(p/2),
+Ns =  c(p+1,round(p*1.5),p*3) # round(p/2),
 Ns.names = c("1","1.5","3") #"0.5",
 # low dimension
-Ks = c(1,3,5,7)
+xmin <- uniroot(f = function (k) (p*(p + 1)/2 - p*(k + 1) + k*(k - 1)/2), 
+                interval = c(1,p))
+### Ks = c(1,3,5,7)
+Ks = floor(xmin$root)
 ####################################
 
 print(paste0("Running the following scenario: ",
@@ -135,6 +139,11 @@ for ( n.ind in 1:length(Ns) ){
     set.seed(Sys.time())
     ####################################
     
+    # ####################################   
+    # ## be stupid and use pca to determin num of factors
+    # baing_cr <- baingcriterion(tibble(Y), rmax = p)$IC[1:2]
+    # baing_cr
+    # ####################################
     
     ####################################
     ## run CMR GS
@@ -218,6 +227,16 @@ for ( n.ind in 1:length(Ns) ){
                                  alpha0 = -1, alpha1 = -5*10^(-4))
     output$cusp = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
     toc$cusp = out.cusp$runtime
+    ####################################
+    
+    ####################################
+    ## run competitor GS- SIS
+    out.sis = Mcmc_SIS(Y,X,
+                        1, 1, 4, 2, 2,
+                        nrun = S, burn = burnin, thin = 1,
+                        my_seed =  sim.ind + 500)
+    output$sis = out.sis$covMean
+    toc$cusp = out.sis$time
     ####################################
     
     ###########################

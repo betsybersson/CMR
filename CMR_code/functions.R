@@ -80,7 +80,7 @@ CMR_GS = function(Y,X = NA,
   if (save.all == "ICO"){
     cov.inv.out = cov.inv.det.out = 0
   } else {
-    cov.out = cov.inv.out = array(NA,dim = c(n.save.out,p*p))
+    cov.out = cov.inv.out = cov.shrinkto.inv.out = array(NA,dim = c(n.save.out,p*p))
     Lambda.out = array(NA,dim = c(n.save.out,p*k))
     eta.out = array(NA,dim=c(n.save.out, k*n))
     ds.out = array(NA,dim=c(n.save.out,p))
@@ -157,6 +157,8 @@ CMR_GS = function(Y,X = NA,
         cov.temp = Lambda %*% t(Lambda) + D
         cov.inv.temp = qr.solve(cov.temp)
         
+        cov.shrinkto = D * k * tau2 + X %*% Gamma %*% t(Gamma) %*% t(X)
+        
         cov.out[index,] = c(cov.temp)
         cov.inv.out[index,] = c(cov.inv.temp)
         Lambda.out[index,] = c(Lambda)
@@ -164,12 +166,16 @@ CMR_GS = function(Y,X = NA,
         ds.out[index,] = c(ds)
         Gamma.out[index,] = c(Gamma)
         vars.out[index,] = c(tau2,xi2) #for tau2 and xi2
+        cov.shrinkto.inv.out[index,] = c(qr.solve(cov.shrinkto))
         
         index = index + 1
       }
     } else if (save.all == 1){
+      
       cov.temp = Lambda %*% t(Lambda) + D
       cov.inv.temp = qr.solve(cov.temp)
+      
+      cov.shrinkto = D * k * tau2 + X %*% Gamma %*% t(Gamma) %*% t(X)
       
       cov.out[s,] = c(cov.temp)
       cov.inv.out[s,] = c(cov.inv.temp)
@@ -178,6 +184,8 @@ CMR_GS = function(Y,X = NA,
       ds.out[s,] = c(ds)
       Gamma.out[s,] = c(Gamma)
       vars.out[s,] = c(tau2,xi2) #for tau2 and xi2
+      cov.shrinkto.inv.out[s,] = c(qr.solve(cov.shrinkto))
+      
     } else if (save.all == "ICO"){
       cov.temp = Lambda %*% t(Lambda) + D
 
@@ -195,6 +203,7 @@ CMR_GS = function(Y,X = NA,
     colnames(vars.out) = c("tau2","xi2")
     
     func.out = list("cov" = cov.out,"cov.inv" = cov.inv.out,
+                    "cov.shrinkto.inv" = cov.shrinkto.inv.out,
                     "Lambda" = Lambda.out,
                     "eta" = eta.out,
                     "D" = ds.out,
@@ -560,6 +569,25 @@ getMatDesignMat = function(p1,p2){
   return(X)
 }
 ##########################################################
+### CMR Function: get design matrix for categorical vector
+# CV: vector of lenght p consisting of category membership for G<=p unique categories
+# output: X (p) x (G) design matrix indicating row/column group membership of each of the (p1*p2) variables
+##########################################################
+getCatDesignMat = function(CV){
+  
+  # get design matrix
+  p = length(CV)
+  cvs = unique(CV)
+  g = length(cvs)
+  X = matrix(0, nrow = p, ncol = g)
+  for ( g.ind in 1:g){
+    X[CV==cvs[g.ind],g.ind] = 1
+  }
+  colnames(X) = cvs
+  return(X)
+}
+
+##########################################################
 ### Un-vectorize matrix-variate data 
 # input: x: n x p1p2 matrix
 # for- p1: row dimension of matrix-variate data
@@ -641,15 +669,26 @@ cov.kron.mle = function(X,itmax = 100,eps = 1e-5,
               "it" = it, "runtime" = runtime))
   
 }
+##########################################################
+## Reflect value to positive side of A
+##########################################################
+reflect = function(X,A){
+  if (X<A) {
+    out = A + (A-X)
+  } else {
+    out = X 
+  }
+  return(out)
+}
 ###########################
 ## Latent factor model (basic)
 # latent factor drawn from mean 0 normal distribution
-### TO DO- CHANGE THE SAMPLING OF THE WISHART DF- do random walk
 ###########################
 ShrinkSep_GS = function(Y,p1,p2,
                   S = 5100,
                   burnin = 100,
                   thin = 1,
+                  nu.delta = .1, # mh symmetric random walk
                   save.all = 0,
                   my.seed = Sys.time()){
   
@@ -665,17 +704,16 @@ ShrinkSep_GS = function(Y,p1,p2,
   S1 = eye(p1); S1.inv = solve(S1)
   S2 = eye(p2); S2.inv= solve(S2)
   
-  nu.domain = c((p+2):round(2.5*p)); ND = length(nu.domain)
-  
-  eta1.domain = c((p1+2):(p1+10))
-  eta2.domain = c((p2+2):(p2+10))
-  ED = length(eta1.domain)
+  ## hyper prior for df
+  DF.PROB = 0.2
+  DF.SIZE = max(round((2*p-(p+2))/4) * DF.PROB/(1-DF.PROB),1) # mean is 1st quantile in lower bound to p*2
   ###########################
   
   ###########################
   ## initialize values
   V1 = V1.inv = eye(p1)
   V2 = V2.inv = eye(p2)
+  Vi = Vi.inv = eye(p)
   
   nu = p+3
   Sig = Sig.inv = eye(p)
@@ -694,11 +732,13 @@ ShrinkSep_GS = function(Y,p1,p2,
   nu.out = array(NA,dim=c(n.save.out))
   V1.out = array(NA,dim = c(n.save.out,p1*p1))
   V2.out = array(NA,dim = c(n.save.out,p2*p2))
+  V.out = array(NA,dim = c(n.save.out,p*p))
   ###########################
   
   ###########################
   ## global helpers
   Si = t(Y) %*% Y
+  nu.acc = 0
   ###########################
   
   ###########################
@@ -706,19 +746,34 @@ ShrinkSep_GS = function(Y,p1,p2,
   tic = Sys.time()
   for ( s in 1:S ){
     
+    # ## sample nu - uniform on nu.domain
+    # #### UNSTABLE
+    # Vi.inv = kronecker(V2.inv,V1.inv)
+    # d.sig = sapply(nu.domain,function(k)
+    #   dinvwish.proptonu(Sig,k,Vi.inv/(k - p - 1),T) )
+    # probs = d.sig/sum(d.sig)
+    # nu = sample(nu.domain,size = 1,prob = probs)
+    
+    
+    ## sample nu and sigi jointly
+    ## sample nu
+    nu.star = reflect(sample((nu - nu.delta):(nu + nu.delta),1),p+2)
+    R = dmvT(Y,nu.star-p+1,0,Vi,Vi.inv,log=TRUE) - 
+      dmvT(Y,nu-p+1,0,Vi,Vi.inv,log=TRUE) +
+      dnbinom(nu.star - (p+2),DF.SIZE,DF.PROB,log=TRUE) -
+      dnbinom(nu - (p+2),DF.SIZE,DF.PROB,log=TRUE)
+    ## if u<r, set nu to be nu.star
+    if (log(runif(1))<R){
+      nu = nu.star
+      nu.acc = nu.acc + 1
+    }
+    
+    
     ## sample Sigi
-    Vi = kronecker(V2,V1)
     Mi = qr.solve(Si + (nu-p-1) * Vi)
     Sig.inv = rwish(Mi, nu + n)
     Sig = qr.solve(Sig.inv)
-    
-    ## sample nu - uniform on nu.domain
-    #### UNSTABLE
-    Vi.inv = kronecker(V2.inv,V1.inv)
-    d.sig = sapply(nu.domain,function(k)
-      dinvwish.proptonu(Sig,k,Vi.inv/(k - p - 1),T) )
-    probs = d.sig/sum(d.sig)
-    nu = sample(nu.domain,size = 1,prob = probs)
+  
     
     ## sample V1
     Sig.inv.chol = t(chol(Sig.inv))
@@ -735,11 +790,8 @@ ShrinkSep_GS = function(Y,p1,p2,
     V2 = rwish(Mi,eta2 + nu * p1)
     V2.inv = qr.solve(V2)
     
-    ## store output
-    Sig.out[s,] = unlist(Sig)
-    nu.out[s,] = nu
-    V1.out[s,] = unlist(V1)
-    V2.out[s,] = unlist(V2)
+    Vi = kronecker(V2,V1)
+    Vi.inv = kronecker(V2.inv,V1.inv)
     
     ## save output
     if (save.all == 0){
@@ -750,6 +802,7 @@ ShrinkSep_GS = function(Y,p1,p2,
         nu.out[index] = nu
         V1.out[index,] = c(V1)
         V2.out[index,] = c(V2)
+        V.out[index,] = c(Vi)
         
         index = index + 1
       }
@@ -760,6 +813,7 @@ ShrinkSep_GS = function(Y,p1,p2,
       nu.out[s] = nu
       V1.out[s,] = c(V1)
       V2.out[s,] = c(V2)
+      V.out[s,] = c(Vi)
     }
     
   } # end GS iteration
@@ -768,9 +822,13 @@ ShrinkSep_GS = function(Y,p1,p2,
   
   ###########################
   ## put output in list and save to function
+  func.out = list("cov" = Sig.out, "cov.inv" = Sig.inv.out,
+                  "cov.prior" = V.out, "nu" = nu.out,
+                  "runtime" = runtime, "acc" = nu.acc/S)
   
-  func.out = list("cov" = Sig.out,"cov.inv" = Sig.inv.out,
-                  "runtime" = runtime)
+  if (save.all == 1){
+    func.out = func.out ## fill in 
+  }
   
   
   set.seed(Sys.time())
