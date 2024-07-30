@@ -241,54 +241,38 @@ for ( n.ind in 1:length(Ns) ){
       output$mle = cov.mle(Y)
       toc$mle = 0
     }
-    
     ####################################
-    
-    # ####################################
-    # ## run LFM GS
-    # for ( k.ind in 1:length(Ks) ){
-    #   out.lfm  = LFM_GS(Y,
-    #                     k = Ks[k.ind],
-    #                     S = S,
-    #                     burnin = burnin,
-    #                     my.seed = sim.ind + 600 + k.ind)
-    #   output[[length(output)+1]] = qr.solve(matrix(colMeans(out.lfm$cov.inv),ncol = p)) ## stein estimator
-    #   toc[[length(toc)+1]]  = out.lfm$runtime
-    # }
-    # # name based on value of K
-    # names(output)[-c(1:length(Ks))] = names(toc)[-c(1:length(Ks))] = paste0("lfm.K",Ks)
-    # ####################################
-    
 
-    ####################################
-    ## run competitor GS- CUSP
-    out.cusp = cusp_factor_adapt(Y,
-                                 my_seed =  sim.ind + 600,
-                                 N_sampl = S.fancy,
-                                 burnin = burnin.fancy,
-                                 alpha = DUNSON_ALPHA, 
-                                 a_sig = 1, b_sig = 1,
-                                 a_theta = 2, b_theta = 2, theta_inf = 0.05,
-                                 start_adapt = S.fancy, Hmax = p + 1, # don't adapt
-                                 alpha0 = -1, alpha1 = -5*10^(-4))
-    output$cusp = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
-    toc$cusp = out.cusp$runtime
-    ####################################
-    
-    ####################################
-    ## run competitor GS- SIS
-    out.sis = Mcmc_SIS(Y,X,
-                       as = 1, bs = 1, alpha = DUNSON_ALPHA,
-                       a_theta = 2, b_theta = 2,
-                       nrun = S.fancy, burn = burnin.fancy,
-                       thin = 1,
-                       start_adapt = S.fancy, kmax = p + 1, # don't adapt
-                       my_seed =  sim.ind + 700,
-                       output = c("covSamples", "covSamplesInv","time"))
-    output$sis = qr.solve(matrix(colMeans(out.sis$covSamplesInv),ncol = p)) ## stein estimator #
-    # output$sis =  out.sis$covMean
-    toc$sis = out.sis$time
-    ####################################
+
+    # ####################################
+    # ## run competitor GS- CUSP
+    # out.cusp = cusp_factor_adapt(Y,
+    #                              my_seed =  sim.ind + 600,
+    #                              N_sampl = S.fancy,
+    #                              burnin = burnin.fancy,
+    #                              alpha = DUNSON_ALPHA, 
+    #                              a_sig = 1, b_sig = 1,
+    #                              a_theta = 2, b_theta = 2, theta_inf = 0.05,
+    #                              start_adapt = S.fancy, Hmax = p + 1, # don't adapt
+    #                              alpha0 = -1, alpha1 = -5*10^(-4))
+    # output$cusp = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
+    # toc$cusp = out.cusp$runtime
+    # ####################################
+    # 
+    # ####################################
+    # ## run competitor GS- SIS
+    # out.sis = Mcmc_SIS(Y,X,
+    #                    as = 1, bs = 1, alpha = DUNSON_ALPHA,
+    #                    a_theta = 2, b_theta = 2,
+    #                    nrun = S.fancy, burn = burnin.fancy,
+    #                    thin = 1,
+    #                    start_adapt = S.fancy, kmax = p + 1, # don't adapt
+    #                    my_seed =  sim.ind + 700,
+    #                    output = c("covSamples", "covSamplesInv","time"))
+    # output$sis = qr.solve(matrix(colMeans(out.sis$covSamplesInv),ncol = p)) ## stein estimator #
+    # # output$sis =  out.sis$covMean
+    # toc$sis = out.sis$time
+    # ####################################
     
     ####################################
     ## get distance from each output and the truth
