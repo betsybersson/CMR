@@ -8,7 +8,7 @@ library(pgdraw)
 library(calculus)
 library(matrixStats)
 
-Mcmc_SIS = function(Y, X=NULL, as, bs, alpha, a_theta, b_theta, b_beta = 1,  
+Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,  
                     continuous_X = NULL ,  kinit = NULL, kmax = NULL,
                     b0=1, b1=5*10^(-4), start_adapt = 50, 
                     nrun, burn=round(nrun/4), thin = 1, 
@@ -20,7 +20,7 @@ Mcmc_SIS = function(Y, X=NULL, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   # dimensions
   n = dim(Y)[1]
   p = dim(Y)[2]
-  if(is.null(X)){X=matrix(1, nrow = p, ncol = 1)}
+  if(any(is.na(X))){X=matrix(1, nrow = p, ncol = 1)}
   q = dim(X)[2]
   
   if(is.null(continuous_X)){continuous_X = c(F,rep(T, ncol(X)-1))}
@@ -30,7 +30,7 @@ Mcmc_SIS = function(Y, X=NULL, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   if(is.null(kmax)) kmax = p+1
   if(kmax<kinit){stop("kmax must be greater or equal than kinit.")}
   
-  if(any(output %in% "all")){output = c("covMean", "covSamples", "loadSamples", "loadMean", "loadAbsMean",
+  if(any(output %in% "all")){output = c("covMean", "covSamples", "covSamplesInv", "loadSamples", "loadMean", "loadAbsMean",
                                         "numFactors", "time", "factSamples", "factMean", "locMean", 
                                         "locSamples", "coefMean", "coefSamples")}
   
@@ -60,7 +60,8 @@ Mcmc_SIS = function(Y, X=NULL, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   
   
   # --- Initial values --- #
-  p_constant =2*exp(1)*log(p)/p          # factor probability constant 
+  ###### BETSY EDIT
+  p_constant = min(2*exp(1)*log(p)/p,.999999)          # factor probability constant; "offset constant"; in (0,1) for p>=15
   
   ps = rgamma(p, as, bs )  
   Sigma=diag(1/ps)                                # Sigma = diagonal residual covariance
@@ -86,6 +87,7 @@ Mcmc_SIS = function(Y, X=NULL, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   # --- Allocate output object memory --- #
   if(any(output %in% "covMean")) COVMEAN = matrix(0, nrow = p, ncol = p)
   if(any(output %in% "covSamples")) OMEGA = array(dim = c(p, p, sp))
+  if(any(output %in% "covSamplesInv")) OMEGAINV = array(dim = c(sp, p*p))
   if(any(output %in% "loadMean")) LOADMEAN = matrix(0, nrow = p, ncol = kmax)
   if(any(output %in% "loadAbsMean")) LOADABSMEAN = matrix(0, nrow = p, ncol = kmax)
   if(any(output %in% "loadSamples")) LAMBDA = list()
@@ -104,7 +106,7 @@ Mcmc_SIS = function(Y, X=NULL, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   
   #cat("Start\n")
   
-  t0 = proc.time()
+  t0 = Sys.time()
   for (i in 1:nrun){
     
     
@@ -263,6 +265,7 @@ Mcmc_SIS = function(Y, X=NULL, as, bs, alpha, a_theta, b_theta, b_beta = 1,
       Omega = (Lambda %*% t(Lambda) + Sigma) * scaleMat
       if(any(output %in% "covMean")) COVMEAN = COVMEAN + Omega / sp
       if(any(output %in% "covSamples")) OMEGA[,,ind] = Omega
+      if(any(output %in% "covSamplesInv")) OMEGAINV[ind,] = c(solve(Omega))
       if(any(output %in% "loadMean"))  LOADMEAN = LOADMEAN + Lambda_mean * sqrt(VY) / sp
       if(any(output %in% "loadAbsMean"))  LOADABSMEAN = LOADABSMEAN + abs(Lambda_mean) * sqrt(VY) / sp
       if(any(output %in% "loadSamples")) LAMBDA[[ind]] = Lambda * sqrt(VY)
@@ -333,6 +336,7 @@ Mcmc_SIS = function(Y, X=NULL, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   out = lapply(output, function(x) {
     if(x == "covMean") return(COVMEAN)
     if(x == "covSamples") return(OMEGA)
+    if(x == "covSamplesInv") return(OMEGAINV)
     if(x == "loadMean") return(LOADMEAN)
     if(x == "loadAbsMean") return(LOADABSMEAN)
     if(x == "loadSamples") return(LAMBDA)

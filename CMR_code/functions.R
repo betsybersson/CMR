@@ -837,3 +837,289 @@ ShrinkSep_GS = function(Y,p1,p2,
   ###########################
   
 } # end function
+
+##########################################################
+### Covariance Meta Regression Model with CUSP prior on Gamma Gibbs Sampler- CMR_Gcusp_GS
+## data
+#
+#
+#
+## CMR_GS code copied and edited to add cusp prior on Gamma and 
+## remove Gamma dependence on T
+## CUSP code adapted from https://github.com/siriolegramanti/CUSP/blob/master/cusp.R
+#
+#
+#
+# Y: n x p response matrix
+# X: p x q meta covariate matrix (optional)
+# k: dimension of latent factor
+## classic GS parameters
+# S: number of iterations for GS
+# burnin: number of iterations to burnin
+# thin: thinning mechanism
+# save.all: logical to determine what parameters to return. If 0, save subset 
+#       of params post thin/burnin. If 1, save and return all iterations 
+#       of all parameters. If ICO, save and return only the sum of the inverted 
+#       sampling covariance estimate (useful if large p,n)
+## optional parameters
+# 
+##########################################################
+CMR_cusp_GS = function(Y,X = NA,
+                       k = round(ncol(Y)/2),
+                       S = 5100,
+                       burnin = 100,
+                       thin = 1,
+                       save.all = 0,
+                       my.seed = Sys.time(),
+                       #### CUSP PARAMETERS
+                       alpha = round(k/2), # prior expected number of active factors
+                       a.theta = 2, b.theta = 2, # prior IG parameters on nu
+                       theta.inf = 0.05){
+  
+  set.seed(my.seed)
+  
+  ###########################
+  ## set hyper params
+  p = ncol(Y)
+  n = nrow(Y)
+  
+  ## handle some things for meta covariates
+  ## incl some warnings to make sure dimensions are right
+  if (is.vector(X)){
+    X = matrix(X,ncol=1)
+  }
+  
+  if (all(is.na(X))){
+    # if X is NA, make it the intercept
+    X = matrix(1,ncol=1,nrow = p)
+  }
+  
+  if (nrow(X)!=p){
+    stop("Y,X dimension mismatch!")
+  }
+  
+  q = ncol(X)
+  
+  ## IG shape/rate parameters
+  a.d = b.d = 1
+  a.xi = b.xi = 1
+  a.tau = b.tau = 1
+  
+  ## CUSP parameters
+  # a.theta = b.theta = 2
+  # alpha = 1 ####????
+  # theta.inf = 1/100
+  ###########################
+  
+  ###########################
+  ## initialize values
+  # sampling model
+  Lambda = matrix(0,ncol = k, nrow = p)
+  eta = matrix(0,ncol = k, nrow = n)
+  ds = rep(1,p); D = D.inv = diag(ds)
+  # factor model
+  Gamma = matrix(0,nrow = q, ncol = k)
+  tau2 = 1; Tau = Tau.inv = eye(k)*tau2
+  # CUSP
+  theta.inv = theta = rep(1,k)
+  Theta = diag(1/theta); Theta.inv = diag(theta.inv)
+  z = rep(2,k)
+  pi = rep(1,k)/k
+  nu = rep(.2,k); nu[k] = 1
+  omega.function = function(nu){
+    omega = array(NA,dim=k)
+    omega[1] = nu[1]
+    for (h in 2:k){
+      omega[h]<-nu[h]*prod(1-nu[1:(h-1)]) 
+    }
+    return(omega)
+  }
+  omega = omega.function(nu)
+  ###########################
+  
+  ###########################
+  ## create storage 
+  if (save.all == 1){
+    n.save.out = S
+  } else if (save.all == 0 | save.all == "ICO") {
+    len.out = length(seq(from = burnin+1, to = S, by = thin))
+    n.save.out = len.out
+    index = 1  
+  } 
+  if (save.all == "ICO"){
+    cov.inv.out = cov.inv.det.out = 0
+  } else {
+    cov.out = cov.inv.out = cov.shrinkto.inv.out = array(NA,dim = c(n.save.out,p*p))
+    Lambda.out = array(NA,dim = c(n.save.out,p*k))
+    eta.out = array(NA,dim=c(n.save.out, k*n))
+    ds.out = array(NA,dim=c(n.save.out,p))
+    Gamma.out = array(NA,dim=c(n.save.out,(q)*k))
+    vars.out = array(NA,dim=c(n.save.out,1)) #for tau2
+  }
+  
+  ###########################
+  
+  ###########################
+  ## global helpers
+  XXt = X %*% t(X)
+  ###########################
+  
+  ###########################
+  ## GS
+  tic = Sys.time()
+  for ( s in 1:S ){
+    
+    ## sample etais
+    R = t(Lambda) %*% D.inv
+    S.eta.inv = qr.solve(R %*% Lambda + eye(k))
+    M.eta.help = S.eta.inv %*% R
+    
+    eta.list = mclapply(1:n,function(i) rmvnorm(M.eta.help %*% Y[i,],S.eta.inv))
+    eta = rbind.list(eta.list)
+    
+    ## sample djs
+    for ( j in 1:p ){
+      lambda.j = Lambda[j,]
+      helper = (lambda.j - t(Gamma) %*% X[j,])
+      S.dj = sum((Y[,j] -  eta %*% lambda.j)^2) + t(helper) %*% helper / tau2 + b.d
+      ds[j] = 1/rgamma(1,(n+k+a.d)/2,c(S.dj)/2)
+    }
+    # update diagonal matrices
+    D = diag(ds); D.inv = diag(1/ds)
+    
+    ## sample Lambda
+    S.gamma.inv = qr.solve(Theta.inv / tau2 + t(eta) %*% eta)
+    M.gamma = X %*% Gamma %*% Theta.inv / tau2 + t(Y) %*% eta
+    Lambda = rmatnorm(M.gamma %*% S.gamma.inv,
+                      V = S.gamma.inv, U = D)
+    
+    ## sample Gamma
+    R = t(X) %*% D.inv / tau2
+    S.gamma.inv = qr.solve(R %*% X + eye(q))
+    M.gamma = R %*% Lambda
+    Gamma = rmatnorm(S.gamma.inv %*% M.gamma, V = Theta, U = S.gamma.inv)
+    
+    
+    ## sample tau2
+    helper = Lambda - X %*% Gamma
+    S.tau = mat_trace(t(helper) %*% D.inv %*% helper %*% Theta.inv) + b.tau
+    tau2 = 1/rgamma(1, (p*k + a.tau)/2, S.tau/2)
+    Tau = eye(k)*tau2; Tau.inv = eye(k)/tau2
+    
+    
+    ### CUSP- code adapted from https://github.com/siriolegramanti/CUSP/blob/master/cusp.R
+    ## sample z
+    lhd_spike<-rep(0,k)
+    lhd_slab<-rep(0,k)
+    for (h in 1:k){
+      lhd_spike[h]<-exp(sum(log(dnorm(Lambda[,h], mean = 0, sd = theta.inf^(1/2), log = FALSE))))
+      lhd_slab[h]<-dmvt(x=Lambda[,h], mu=rep(0,p), S=(b.theta/a.theta)*(XXt + tau2 * D), 
+                        df=2*a.theta)
+      pi<-omega*c(rep(lhd_spike[h],h),rep(lhd_slab[h],k-h))
+      if (sum(pi)==0){
+        pi<-c(rep(0,k-1),1)
+      }
+      else{
+        pi<-pi/sum(pi)
+      }
+      z[h] <- c(1:k)%*%rmultinom(n=1, size=1, prob=pi)
+    }
+    
+    ## sample nu
+    for (h in 1:(k-1)){
+      nu[h] <- rbeta(1, shape1 = 1+sum(z == h), 
+                     shape2 = alpha+sum(z > h))
+    }
+    
+    ## compute omega
+    omega = omega.function(nu)
+    
+    ## sample theta
+    for (h in 1:k){
+      if (z[h]<=h){
+        theta.inv[h]<-theta.inf^(-1)
+      } else {
+        theta.inv[h] <- 
+          rgamma(n = 1,
+                 shape = a.theta + 0.5*p,
+                 rate = b.theta + 0.5*t(Lambda[,h]) %*% solve(XXt + tau2 * D) %*% Lambda[,h])
+      }
+    }
+    Theta = diag(1/theta.inv); Theta.inv = diag(theta.inv)
+    
+    
+    
+    ## save output
+    if (save.all == 0){
+      if ((s>burnin)&((s %% thin)==0)){
+        
+        cov.temp = Lambda %*% t(Lambda) + D
+        cov.inv.temp = qr.solve(cov.temp)
+        
+        cov.shrinkto = D * k * tau2 + X %*% Gamma %*% t(Gamma) %*% t(X)
+        
+        cov.out[index,] = c(cov.temp)
+        cov.inv.out[index,] = c(cov.inv.temp)
+        Lambda.out[index,] = c(Lambda)
+        eta.out[index,] = c(eta)
+        ds.out[index,] = c(ds)
+        Gamma.out[index,] = c(Gamma)
+        vars.out[index,] = c(tau2) #for tau2 
+        cov.shrinkto.inv.out[index,] = c(qr.solve(cov.shrinkto))
+        
+        index = index + 1
+      }
+    } else if (save.all == 1){
+      
+      cov.temp = Lambda %*% t(Lambda) + D
+      cov.inv.temp = qr.solve(cov.temp)
+      
+      cov.shrinkto = D * k * tau2 + X %*% Gamma %*% t(Gamma) %*% t(X)
+      
+      cov.out[s,] = c(cov.temp)
+      cov.inv.out[s,] = c(cov.inv.temp)
+      Lambda.out[s,] = c(Lambda)
+      eta.out[s,] = c(eta)
+      ds.out[s,] = c(ds)
+      Gamma.out[s,] = c(Gamma)
+      vars.out[s,] = c(tau2) #for tau2
+      cov.shrinkto.inv.out[s,] = c(qr.solve(cov.shrinkto))
+      
+    } else if (save.all == "ICO"){
+      cov.temp = Lambda %*% t(Lambda) + D
+      
+      cov.inv.out = cov.inv.out + c(qr.solve(cov.temp))
+      cov.inv.det.out = cov.inv.det.out + det(cov.temp)
+    }
+    
+  } # end GS iteration
+  ###########################
+  runtime = difftime(Sys.time(),tic,units = "secs")
+  
+  ###########################
+  ## put output in list and save to function
+  if (save.all == 0 | save.all == 1){
+    colnames(vars.out) = c("tau2")
+    
+    func.out = list("cov" = cov.out,"cov.inv" = cov.inv.out,
+                    "cov.shrinkto.inv" = cov.shrinkto.inv.out,
+                    "Lambda" = Lambda.out,
+                    "eta" = eta.out,
+                    "D" = ds.out,
+                    "Gamma" = Gamma.out,
+                    "vars" = vars.out,
+                    "runtime" = runtime)
+    if (save.all == 1){
+      func.out = func.out #c(func.out,list("out2" = out2))
+    }
+  } else if (save.all == "ICO"){
+    func.out = list("cov.inv.mean" = cov.inv.out/n.save.out,
+                    "cov.inv.det.mean" = cov.inv.det.out/n.save.out)
+  }
+  
+  set.seed(Sys.time())
+  
+  return(func.out)
+  ###########################
+  
+} # end function

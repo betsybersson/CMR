@@ -7,7 +7,7 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = TRUE
-cov.method = "kron" ## options: eye, cor9, comSym3groups, kron
+cov.method = "cor9" ## options: eye, cor9, comSym3groups, kron
 identifier = "p9"
 ####################################
 
@@ -18,12 +18,9 @@ identifier = "p9"
 p = 9
 # sample sizes to loop through
 Ns =  c(p+1,round(p*1.5),p*3) # round(p/2),
-Ns.names = c("1","1.5","3") #"0.5",
+Ns.names = c("1","1.5","3") #c("1","1.5","3") #
 # low dimension
-xmin <- uniroot(f = function (k) (p*(p + 1)/2 - p*(k + 1) + k*(k - 1)/2), 
-                interval = c(1,p))
-### Ks = c(1,3,5,7)
-Ks = floor(xmin$root)
+Ks = c(1,3,5)
 ####################################
 
 print(paste0("Running the following scenario: ",
@@ -37,15 +34,18 @@ X = NA
 
 ####################################
 ## gibbs sampler variables
-S = 10000
-burnin = 500
+S.fancy = 20000
+burnin.fancy = 10000
+
+S.simple = 11000
+burnin.simple = 1000
 # number of simulation replicates
 sim = 25
 ####################################
 
 print(paste0("Using the following GS values:",
-		    " S: ",S,
-		    "; burnin: ", burnin,
+		    " S: ",S.fancy,
+		    "; burnin: ", burnin.fancy,
 		    "; sims: ",sim,
 		    "!!!!!!!!!!!!!"))
 
@@ -127,7 +127,7 @@ for ( n.ind in 1:length(Ns) ){
   registerDoParallel(cl)
   
   ###
-  parallel.out <- foreach(sim.ind=1:sim, .combine=cbind, .packages = c("parallel","LaplacesDemon")) %dopar% {
+  parallel.out <- foreach(sim.ind=1:sim, .combine=cbind, .packages = c("parallel","LaplacesDemon","pgdraw","calculus","matrixStats")) %dopar% {
     
     ## output storage
     output = toc = list()
@@ -150,9 +150,9 @@ for ( n.ind in 1:length(Ns) ){
     for ( k.ind in 1:length(Ks) ){
       out.cmr  = CMR_GS(Y,X,
                         k = Ks[k.ind],
-                        S = S,
-                        burnin = burnin,
-                        my.seed = sim.ind + 100)
+                        S = S.simple,
+                        burnin = burnin.simple,
+                        my.seed = sim.ind + 100 + Ks[k.ind])
       output[[k.ind]] = qr.solve(matrix(colMeans(out.cmr$cov.inv),ncol = p)) ## stein estimator
       toc[[k.ind]]  = out.cmr$runtime
     }
@@ -161,18 +161,30 @@ for ( n.ind in 1:length(Ns) ){
     ####################################
     
     ####################################
-    ## run LFM GS
-    for ( k.ind in 1:length(Ks) ){
-      out.lfm  = LFM_GS(Y,
-                        k = Ks[k.ind],
-                        S = S,
-                        burnin = burnin,
-                        my.seed = sim.ind + 200)
-      output[[length(output)+1]] = qr.solve(matrix(colMeans(out.lfm$cov.inv),ncol = p)) ## stein estimator
-      toc[[length(toc)+1]]  = out.lfm$runtime
-    }
-    # name based on value of K
-    names(output)[-c(1:length(Ks))] = names(toc)[-c(1:length(Ks))] = paste0("lfm.K",Ks)
+    ## run CMR GS with CUSP
+    DUNSON_ALPHA = floor(p/3) ## prior expected number of active factors- used for all cusp and sis
+    
+    out.cmr.cusp  = CMR_cusp_GS(Y,X,
+                      k = p + 1, #ceiling((p-1)/2),
+                      S = S.fancy,
+                      burnin = burnin.fancy,
+                      my.seed = sim.ind + 200,
+                      alpha = DUNSON_ALPHA)
+    output$cmr.cusp = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
+    toc$cmr.cusp  = out.cmr.cusp$runtime
+    ####################################
+    
+    ####################################
+    ## run CMR GS with CUSP with betsy prior
+    out.cmr.cusp  = CMR_cusp_GS(Y,X,
+                                k = floor((p-1)/2),
+                                S = S.fancy,
+                                burnin = burnin.fancy,
+                                my.seed = sim.ind + 200,
+                                alpha = DUNSON_ALPHA,
+                                a.theta = 1/2, b.theta = 1/2)
+    output$cmr.cusp.betsy = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
+    toc$cmr.cusp.betsy  = out.cmr.cusp$runtime
     ####################################
     
     ####################################
@@ -181,14 +193,26 @@ for ( n.ind in 1:length(Ns) ){
       for ( k.ind in 1:length(Ks) ){
         out.cmr  = CMR_GS(Y,X = NA,
                           k = Ks[k.ind],
-                          S = S,
-                          burnin = burnin,
-                          my.seed = sim.ind + 100)
+                          S = S.simple,
+                          burnin = burnin.simple,
+                          my.seed = sim.ind + 300 + k.ind)
         output[[length(output)+1]] = qr.solve(matrix(colMeans(out.cmr$cov.inv),ncol = p)) ## stein estimator
         toc[[length(toc)+1]]  = out.cmr$runtime
+        
+        # name based on value of K
+        names(output)[length(output)+1] = names(toc)[length(output)+1] = paste0("cmr.K",Ks[k.ind],".intercept")
       }
-      # name based on value of K
-      names(output)[-c(1:(2*length(Ks)))] = names(toc) = paste0("cmr.K",Ks,".intercept")
+      
+      ## run CMR GS with CUSP
+      out.cmr.cusp  = CMR_cusp_GS(Y,X = NA,
+                                  k = ceiling((p-1)/2),
+                                  S = S.fancy,
+                                  burnin = burnin.fancy,
+                                  my.seed = sim.ind + 400,
+                                  alpha = floor(k/3) ) # expected number of active factors or something
+                                  
+      output$cmr.cusp.intercept = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
+      toc$cmr.cusp.intercept  = out.cmr.cusp$runtime
     }
     ####################################
     
@@ -197,33 +221,55 @@ for ( n.ind in 1:length(Ns) ){
     if (cov.method == "kron"){
       # get kron MLE from data
       cov.kron.temp = cov.kron.mle(vec.inv.array(Y,p1,p2),
-                                   de.meaned = T,my.seed = sim.ind + 400)
+                                   de.meaned = T,my.seed = sim.ind + 500)
       output$kron.mle = cov.kron.temp$Cov
       toc$kron.mle = cov.kron.temp$runtime
       
-      # # shrink to kron
-      # kron.shrink.temp = ShrinkSep_GS(Y,p1,p2,
-      #                                 S = S,burnin = burnin,
-      #                                 my.seed = sim.ind + 500)
-      # output$kron.shrinkage = qr.solve(matrix(colMeans(kron.shrink.temp$cov.inv),ncol = p)) ## stein estimator
-      # toc$kron.shrinkage = kron.shrink.temp$runtime
+      # shrink to kron
+      kron.shrink.temp = ShrinkSep_GS(Y,p1,p2,
+                                      S = S.simple,
+                                      burnin = burnin.simple,
+                                      my.seed = sim.ind + 500)
+      output$kron = qr.solve(matrix(colMeans(kron.shrink.temp$cov.inv),ncol = p)) ## stein estimator
+      toc$kron = kron.shrink.temp$runtime
     }
     ####################################
     
     ####################################
     ## sample covariance
-    output$mle = cov(Y)
-    toc$mle = 0
+    if ( p <= n){
+      output$mle = cov.mle(Y)
+      toc$mle = 0
+    }
+    
     ####################################
     
+    # ####################################
+    # ## run LFM GS
+    # for ( k.ind in 1:length(Ks) ){
+    #   out.lfm  = LFM_GS(Y,
+    #                     k = Ks[k.ind],
+    #                     S = S,
+    #                     burnin = burnin,
+    #                     my.seed = sim.ind + 600 + k.ind)
+    #   output[[length(output)+1]] = qr.solve(matrix(colMeans(out.lfm$cov.inv),ncol = p)) ## stein estimator
+    #   toc[[length(toc)+1]]  = out.lfm$runtime
+    # }
+    # # name based on value of K
+    # names(output)[-c(1:length(Ks))] = names(toc)[-c(1:length(Ks))] = paste0("lfm.K",Ks)
+    # ####################################
+    
+
     ####################################
     ## run competitor GS- CUSP
     out.cusp = cusp_factor_adapt(Y,
-                                 my_seed =  sim.ind + 300,
-                                 N_sampl = S,
-                                 alpha = 5, a_sig = 1, b_sig = 0.3,
+                                 my_seed =  sim.ind + 600,
+                                 N_sampl = S.fancy,
+                                 burnin = burnin.fancy,
+                                 alpha = DUNSON_ALPHA, 
+                                 a_sig = 1, b_sig = 1,
                                  a_theta = 2, b_theta = 2, theta_inf = 0.05,
-                                 start_adapt = S, Hmax = p + 1, # don't adapt
+                                 start_adapt = S.fancy, Hmax = p + 1, # don't adapt
                                  alpha0 = -1, alpha1 = -5*10^(-4))
     output$cusp = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
     toc$cusp = out.cusp$runtime
@@ -232,30 +278,39 @@ for ( n.ind in 1:length(Ns) ){
     ####################################
     ## run competitor GS- SIS
     out.sis = Mcmc_SIS(Y,X,
-                        1, 1, 4, 2, 2,
-                        nrun = S, burn = burnin, thin = 1,
-                        my_seed =  sim.ind + 500)
-    output$sis = out.sis$covMean
-    toc$cusp = out.sis$time
+                       as = 1, bs = 1, alpha = DUNSON_ALPHA,
+                       a_theta = 2, b_theta = 2,
+                       nrun = S.fancy, burn = burnin.fancy,
+                       thin = 1,
+                       start_adapt = S.fancy, kmax = p + 1, # don't adapt
+                       my_seed =  sim.ind + 700,
+                       output = c("covSamples", "covSamplesInv","time"))
+    output$sis = qr.solve(matrix(colMeans(out.sis$covSamplesInv),ncol = p)) ## stein estimator #
+    # output$sis =  out.sis$covMean
+    toc$sis = out.sis$time
     ####################################
     
-    ###########################
+    ####################################
     ## get distance from each output and the truth
     loss = unlist(lapply(output,function(k)
       loss_stein(k,true.cov)))
-    ###########################
+    ####################################
     
+    ####################################
+    ## save output
     output = list("loss" = loss,
                   "toc" = unlist(toc) #as.numeric(toc.swag,units="secs")
                   )
+    ####################################
+    
   }
   
   #stop cluster
   stopCluster(cl)
   
-  temp.loss = Reduce("+",parallel.out[1,])/S
+  temp.loss = Reduce("+",parallel.out[1,])/sim
   loss.avg = rbind(loss.avg,temp.loss)
-  toc.avg = rbind(toc.avg,Reduce("+",parallel.out[2,])/S)
+  toc.avg = rbind(toc.avg,Reduce("+",parallel.out[2,])/sim)
 
   print(paste0("Finished running the scenario for N = ", n,"!!!!!!!!!"))
 
@@ -277,3 +332,5 @@ save(loss.avg,toc.avg,file = output.filename)
 ####################################
 
 print(paste0("Saved output to: ", output.filename))
+
+apply(loss.avg,1,function(j)j/min(j)) |> t()
