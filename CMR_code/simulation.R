@@ -17,10 +17,10 @@ identifier = "p9"
 # number of variables
 p = 9
 # sample sizes to loop through
-Ns =  c(p+1,round(p*1.5),p*3) # round(p/2),
-Ns.names = c("1","1.5","3") #c("1","1.5","3") #
+Ns =  c(p+1,round(p*1.5),p*3) 
+Ns.names = c("1","1.5","3") #
 # low dimension
-Ks = c(1,3,5)
+Ks = "" # c(1,3,5)
 ####################################
 
 print(paste0("Running the following scenario: ",
@@ -145,37 +145,25 @@ for ( n.ind in 1:length(Ns) ){
     # baing_cr
     # ####################################
     
-    ####################################
-    ## run CMR GS
-    for ( k.ind in 1:length(Ks) ){
-      out.cmr  = CMR_GS(Y,X,
-                        k = Ks[k.ind],
-                        S = S.simple,
-                        burnin = burnin.simple,
-                        my.seed = sim.ind + 100 + Ks[k.ind])
-      output[[k.ind]] = qr.solve(matrix(colMeans(out.cmr$cov.inv),ncol = p)) ## stein estimator
-      toc[[k.ind]]  = out.cmr$runtime
-    }
-    # name based on value of K
-    names(output) = names(toc) = paste0("cmr.K",Ks)
-    ####################################
+    # ####################################
+    # ## run CMR GS
+    # for ( k.ind in 1:length(Ks) ){
+    #   out.cmr  = CMR_GS(Y,X,
+    #                     k = Ks[k.ind],
+    #                     S = S.simple,
+    #                     burnin = burnin.simple,
+    #                     my.seed = sim.ind + 100 + Ks[k.ind])
+    #   output[[k.ind]] = qr.solve(matrix(colMeans(out.cmr$cov.inv),ncol = p)) ## stein estimator
+    #   toc[[k.ind]]  = out.cmr$runtime
+    # }
+    # # name based on value of K
+    # names(output) = names(toc) = paste0("cmr.K",Ks)
+    # ####################################
     
     ####################################
     ## run CMR GS with CUSP
     DUNSON_ALPHA = floor(p/3) ## prior expected number of active factors- used for all cusp and sis
     
-    out.cmr.cusp  = CMR_cusp_GS(Y,X,
-                      k = p + 1, #ceiling((p-1)/2),
-                      S = S.fancy,
-                      burnin = burnin.fancy,
-                      my.seed = sim.ind + 200,
-                      alpha = DUNSON_ALPHA)
-    output$cmr.cusp = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
-    toc$cmr.cusp  = out.cmr.cusp$runtime
-    ####################################
-    
-    ####################################
-    ## run CMR GS with CUSP with betsy prior
     out.cmr.cusp  = CMR_cusp_GS(Y,X,
                                 k = floor((p-1)/2),
                                 S = S.fancy,
@@ -183,25 +171,25 @@ for ( n.ind in 1:length(Ns) ){
                                 my.seed = sim.ind + 200,
                                 alpha = DUNSON_ALPHA,
                                 a.theta = 1/2, b.theta = 1/2)
-    output$cmr.cusp.betsy = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
-    toc$cmr.cusp.betsy  = out.cmr.cusp$runtime
+    output$cmr.cusp = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
+    toc$cmr.cusp  = out.cmr.cusp$runtime
     ####################################
     
     ####################################
     ## run intercept CMR GS if you haven't
     if (!all(is.na(X))){
-      for ( k.ind in 1:length(Ks) ){
-        out.cmr  = CMR_GS(Y,X = NA,
-                          k = Ks[k.ind],
-                          S = S.simple,
-                          burnin = burnin.simple,
-                          my.seed = sim.ind + 300 + k.ind)
-        output[[length(output)+1]] = qr.solve(matrix(colMeans(out.cmr$cov.inv),ncol = p)) ## stein estimator
-        toc[[length(toc)+1]]  = out.cmr$runtime
-        
-        # name based on value of K
-        names(output)[length(output)+1] = names(toc)[length(output)+1] = paste0("cmr.K",Ks[k.ind],".intercept")
-      }
+      # for ( k.ind in 1:length(Ks) ){
+      #   out.cmr  = CMR_GS(Y,X = NA,
+      #                     k = Ks[k.ind],
+      #                     S = S.simple,
+      #                     burnin = burnin.simple,
+      #                     my.seed = sim.ind + 300 + k.ind)
+      #   output[[length(output)+1]] = qr.solve(matrix(colMeans(out.cmr$cov.inv),ncol = p)) ## stein estimator
+      #   toc[[length(toc)+1]]  = out.cmr$runtime
+      #   
+      #   # name based on value of K
+      #   names(output)[length(output)+1] = names(toc)[length(output)+1] = paste0("cmr.K",Ks[k.ind],".intercept")
+      # }
       
       ## run CMR GS with CUSP
       out.cmr.cusp  = CMR_cusp_GS(Y,X = NA,
@@ -209,8 +197,9 @@ for ( n.ind in 1:length(Ns) ){
                                   S = S.fancy,
                                   burnin = burnin.fancy,
                                   my.seed = sim.ind + 400,
-                                  alpha = floor(k/3) ) # expected number of active factors or something
-                                  
+                                  alpha = DUNSON_ALPHA,
+                                  a.theta = 1/2, b.theta = 1/2)
+      
       output$cmr.cusp.intercept = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
       toc$cmr.cusp.intercept  = out.cmr.cusp$runtime
     }
@@ -244,35 +233,35 @@ for ( n.ind in 1:length(Ns) ){
     ####################################
 
 
-    # ####################################
-    # ## run competitor GS- CUSP
-    # out.cusp = cusp_factor_adapt(Y,
-    #                              my_seed =  sim.ind + 600,
-    #                              N_sampl = S.fancy,
-    #                              burnin = burnin.fancy,
-    #                              alpha = DUNSON_ALPHA, 
-    #                              a_sig = 1, b_sig = 1,
-    #                              a_theta = 2, b_theta = 2, theta_inf = 0.05,
-    #                              start_adapt = S.fancy, Hmax = p + 1, # don't adapt
-    #                              alpha0 = -1, alpha1 = -5*10^(-4))
-    # output$cusp = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
-    # toc$cusp = out.cusp$runtime
-    # ####################################
-    # 
-    # ####################################
-    # ## run competitor GS- SIS
-    # out.sis = Mcmc_SIS(Y,X,
-    #                    as = 1, bs = 1, alpha = DUNSON_ALPHA,
-    #                    a_theta = 2, b_theta = 2,
-    #                    nrun = S.fancy, burn = burnin.fancy,
-    #                    thin = 1,
-    #                    start_adapt = S.fancy, kmax = p + 1, # don't adapt
-    #                    my_seed =  sim.ind + 700,
-    #                    output = c("covSamples", "covSamplesInv","time"))
-    # output$sis = qr.solve(matrix(colMeans(out.sis$covSamplesInv),ncol = p)) ## stein estimator #
-    # # output$sis =  out.sis$covMean
-    # toc$sis = out.sis$time
-    # ####################################
+    ####################################
+    ## run competitor GS- CUSP
+    out.cusp = cusp_factor_adapt(Y,
+                                 my_seed =  sim.ind + 600,
+                                 N_sampl = S.fancy,
+                                 burnin = burnin.fancy,
+                                 alpha = DUNSON_ALPHA,
+                                 a_sig = 1, b_sig = 1,
+                                 a_theta = 2, b_theta = 2, theta_inf = 0.05,
+                                 start_adapt = S.fancy, Hmax = p + 1, # don't adapt
+                                 alpha0 = -1, alpha1 = -5*10^(-4))
+    output$cusp = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
+    toc$cusp = out.cusp$runtime
+    ####################################
+
+    ####################################
+    ## run competitor GS- SIS
+    out.sis = Mcmc_SIS(Y,X,
+                       as = 1, bs = 1, alpha = DUNSON_ALPHA,
+                       a_theta = 2, b_theta = 2,
+                       nrun = S.fancy, burn = burnin.fancy,
+                       thin = 1,
+                       start_adapt = S.fancy, kmax = p + 1, # don't adapt
+                       my_seed =  sim.ind + 700,
+                       output = c("covSamples", "covSamplesInv","time"))
+    output$sis = qr.solve(matrix(colMeans(out.sis$covSamplesInv),ncol = p)) ## stein estimator #
+    # output$sis =  out.sis$covMean
+    toc$sis = out.sis$time
+    ####################################
     
     ####################################
     ## get distance from each output and the truth
