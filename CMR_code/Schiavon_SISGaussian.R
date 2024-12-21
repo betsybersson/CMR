@@ -12,7 +12,8 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
                     continuous_X = NULL ,  kinit = NULL, kmax = NULL,
                     b0=1, b1=5*10^(-4), start_adapt = 50, 
                     nrun, burn=round(nrun/4), thin = 1, 
-                    output = "all", my_seed = 6784, std=T){
+                    output = "all", my_seed = 6784, std=T,
+                    n.predict = 0){
   
   # set seed
   set.seed(my_seed)
@@ -99,6 +100,7 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   if(any(output %in% "numFactors")) runtime = NULL
   if(any(output %in% "factMean")) FACTMEAN = matrix(0, nrow = n, ncol = kmax)
   if(any(output %in% "factSamples")) ETA = list()
+  if(any(output %in% "ystarMean")) YSTAR = matrix(0, nrow = n.predict, ncol = p)
   ind = 1
   
   
@@ -276,6 +278,8 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
       if(any(output %in% "numFactors")) K[ind] = kstar
       if(any(output %in% "factMean")) FACTMEAN = FACTMEAN + eta_mean/sp
       if(any(output %in% "factSamples")) ETA[[ind]] = eta 
+      if(any(output %in% "ystarMean")) YSTAR = YSTAR + 
+        t(sapply(1:n.predict,function(j)rmvnorm(rep(0,p),Omega))) / sp
       
       ind = ind + 1
     }
@@ -348,6 +352,7 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
     if(x == "time") return(runtime)
     if(x == "factMean") return(FACTMEAN)
     if(x == "factSamples") return(ETA)
+    if(x == "ystarMean") return(YSTAR)
   })
   names(out) = output
   out[["model_prior"]] ="SIS"
