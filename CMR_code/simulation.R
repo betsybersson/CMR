@@ -7,18 +7,18 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = TRUE
-cov.method = "cor9" ## options: eye, cor9, comSym3groups, kron
-identifier = "p9"
+cov.method = "kron" ## options: eye, cor9, comSym3groups, kron
+identifier = "p50"
 ####################################
 
 ####################################
 ## problem dimension parameters
 
 # number of variables
-p = 9
+p = 50
 # sample sizes to loop through
-Ns =  c(p+1,round(p*1.5),p*3) 
-Ns.names = c("1","1.5","3") #
+Ns =  c(p+1,round(p*1.5),round(p*3))#,p*3 
+Ns.names = c("1","1.5","3") #,"3"
 # low dimension
 Ks = "" # c(1,3,5)
 ####################################
@@ -120,7 +120,7 @@ for ( n.ind in 1:length(Ns) ){
   n = Ns[n.ind]
 
   if (on.server == T){
-    cl <- makeCluster(cores[1])  
+    cl <- makeCluster(cores[1]-5)  
   } else {
     cl <- makeCluster(cores[1] - 1)  # dont overload your computer
   }
@@ -214,13 +214,13 @@ for ( n.ind in 1:length(Ns) ){
       output$kron.mle = cov.kron.temp$Cov
       toc$kron.mle = cov.kron.temp$runtime
       
-      # shrink to kron
-      kron.shrink.temp = ShrinkSep_GS(Y,p1,p2,
-                                      S = S.simple,
-                                      burnin = burnin.simple,
-                                      my.seed = sim.ind + 500)
-      output$kron = qr.solve(matrix(colMeans(kron.shrink.temp$cov.inv),ncol = p)) ## stein estimator
-      toc$kron = kron.shrink.temp$runtime
+      # # shrink to kron
+      # kron.shrink.temp = ShrinkSep_GS(Y,p1,p2,
+      #                                 S = S.simple,
+      #                                 burnin = burnin.simple,
+      #                                 my.seed = sim.ind + 500)
+      # output$kron = qr.solve(matrix(colMeans(kron.shrink.temp$cov.inv),ncol = p)) ## stein estimator
+      # toc$kron = kron.shrink.temp$runtime
     }
     ####################################
     
