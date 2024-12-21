@@ -6,16 +6,16 @@ library(doParallel)
 
 ####################################
 ## helpers
-on.server = TRUE
-cov.method = "kron" ## options: eye, cor9, comSym3groups, kron
-identifier = "p50"
+on.server = FALSE
+cov.method = "eye" ## options: eye, cor9, comSym3groups, kron
+identifier = "saveall"
 ####################################
 
 ####################################
 ## problem dimension parameters
 
 # number of variables
-p = 50
+p = 9
 # sample sizes to loop through
 Ns =  c(p+1,round(p*1.5),round(p*3))#,p*3 
 Ns.names = c("1","1.5","3") #,"3"
@@ -34,13 +34,13 @@ X = NA
 
 ####################################
 ## gibbs sampler variables
-S.fancy = 20000
-burnin.fancy = 10000
+S.fancy = 20#000
+burnin.fancy = 10#000
 
-S.simple = 11000
-burnin.simple = 1000
+S.simple = 11#000
+burnin.simple = 1#000
 # number of simulation replicates
-sim = 25
+sim = 2#5
 ####################################
 
 print(paste0("Using the following GS values:",
@@ -115,6 +115,7 @@ if (identifier != ""){
 ## run simulation
 cores = detectCores()
 loss.avg = toc.avg = c() #matrix(NA,ncol = length(Ks)*2 + 2, nrow = length(Ns))
+loss.mat = list()
 for ( n.ind in 1:length(Ns) ){
     
   n = Ns[n.ind]
@@ -171,8 +172,8 @@ for ( n.ind in 1:length(Ns) ){
                                 my.seed = sim.ind + 200,
                                 alpha = DUNSON_ALPHA,
                                 a.theta = 1/2, b.theta = 1/2)
-    output$cmr.cusp = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
-    toc$cmr.cusp  = out.cmr.cusp$runtime
+    output$MR.O = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
+    toc$MR.O  = out.cmr.cusp$runtime
     ####################################
     
     ####################################
@@ -200,8 +201,8 @@ for ( n.ind in 1:length(Ns) ){
                                   alpha = DUNSON_ALPHA,
                                   a.theta = 1/2, b.theta = 1/2)
       
-      output$cmr.cusp.intercept = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
-      toc$cmr.cusp.intercept  = out.cmr.cusp$runtime
+      output$MR.I = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
+      toc$MR.I  = out.cmr.cusp$runtime
     }
     ####################################
     
@@ -227,8 +228,8 @@ for ( n.ind in 1:length(Ns) ){
     ####################################
     ## sample covariance
     if ( p <= n){
-      output$mle = cov.mle(Y)
-      toc$mle = 0
+      output$MLE = cov.mle(Y)
+      toc$MLE = 0
     }
     ####################################
 
@@ -244,8 +245,8 @@ for ( n.ind in 1:length(Ns) ){
                                  a_theta = 2, b_theta = 2, theta_inf = 0.05,
                                  start_adapt = S.fancy, Hmax = p + 1, # don't adapt
                                  alpha0 = -1, alpha1 = -5*10^(-4))
-    output$cusp = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
-    toc$cusp = out.cusp$runtime
+    output$CUSP = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
+    toc$CUSP = out.cusp$runtime
     ####################################
 
     ####################################
@@ -258,9 +259,9 @@ for ( n.ind in 1:length(Ns) ){
                        start_adapt = S.fancy, kmax = p + 1, # don't adapt
                        my_seed =  sim.ind + 700,
                        output = c("covSamples", "covSamplesInv","time"))
-    output$sis = qr.solve(matrix(colMeans(out.sis$covSamplesInv),ncol = p)) ## stein estimator #
+    output$SIS = qr.solve(matrix(colMeans(out.sis$covSamplesInv),ncol = p)) ## stein estimator #
     # output$sis =  out.sis$covMean
-    toc$sis = out.sis$time
+    toc$SIS = out.sis$time
     ####################################
     
     ####################################
@@ -281,16 +282,24 @@ for ( n.ind in 1:length(Ns) ){
   #stop cluster
   stopCluster(cl)
   
-  temp.loss = Reduce("+",parallel.out[1,])/sim
-  loss.avg = rbind(loss.avg,temp.loss)
+  # save loss - not just avg
+  loss.temp = matrix(unlist(parallel.out[1,]),
+                    ncol = length(parallel.out[1,][[1]]),
+                    byrow = T)
+  colnames(loss.temp) = names(parallel.out[1,][[1]])
+  loss.mat[[n.ind]] = loss.temp
+  
+  # get averages
+  loss.avg = rbind(loss.avg,colMeans(loss.temp))  #Reduce("+",parallel.out[1,])/sim
   toc.avg = rbind(toc.avg,Reduce("+",parallel.out[2,])/sim)
+
 
   print(paste0("Finished running the scenario for N = ", n,"!!!!!!!!!"))
 
 }
 
 colnames(loss.avg) = colnames(toc.avg) = names(parallel.out[1,][[1]])
-rownames(loss.avg) = rownames(toc.avg) = paste0("N",Ns.names)
+rownames(loss.avg) = rownames(toc.avg) = names(loss.mat) = paste0("N",Ns.names)
 
 ####################################
 
@@ -301,7 +310,7 @@ print("Saving output now !!!")
 ####################################
 ## save output
 output.filename = paste0("./output/SIM_",suffix,".Rdata")
-save(loss.avg,toc.avg,file = output.filename)
+save(loss.avg,toc.avg,loss.mat,file = output.filename)
 ####################################
 
 print(paste0("Saved output to: ", output.filename))
