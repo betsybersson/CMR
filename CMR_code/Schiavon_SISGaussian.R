@@ -7,6 +7,7 @@
 library(pgdraw)
 library(calculus)
 library(matrixStats)
+library(LaplacesDemon)
 
 Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,  
                     continuous_X = NULL ,  kinit = NULL, kmax = NULL,
