@@ -6,16 +6,16 @@ library(doParallel)
 
 ####################################
 ## helpers
-on.server = FALSE
-cov.method = "eye" ## options: eye, cor9, comSym3groups, kron
-identifier = "saveall"
+on.server = TRUE
+cov.method = "kron" ## options: eye, cor9, comSym3groups, kron
+identifier = "saveall_difTrueMatrix"
 ####################################
 
 ####################################
 ## problem dimension parameters
 
 # number of variables
-p = 9
+p = 50
 # sample sizes to loop through
 Ns =  c(p+1,round(p*1.5),round(p*3))#,p*3 
 Ns.names = c("1","1.5","3") #,"3"
@@ -34,13 +34,13 @@ X = NA
 
 ####################################
 ## gibbs sampler variables
-S.fancy = 20#000
-burnin.fancy = 10#000
+S.fancy = 20000
+burnin.fancy = 10000
 
-S.simple = 11#000
-burnin.simple = 1#000
+S.simple = 11000
+burnin.simple = 1000
 # number of simulation replicates
-sim = 2#5
+sim = 25
 ####################################
 
 print(paste0("Using the following GS values:",
@@ -91,12 +91,12 @@ if (cov.method == "eye"){
   }
     
 } else if (cov.method == "kron"){
-  p1 = round(p/3)
+  p1 = round(p/5)
   p2 = round(p/p1)
   p = p1*p2
   
-  R = cor.mat(p1,.7)
-  C = cor.mat(p2,.2)
+  R = cor.mat(p1,.9)
+  C = cor.mat(p2,.6)
   true.cov = kronecker(C,R)
   eigen(true.cov)$val ## check invertible
   
@@ -105,7 +105,7 @@ if (cov.method == "eye"){
   
 }
 # propagate filename suffix
-suffix = cov.method
+suffix = paste0(cov.method,"_p",p)
 if (identifier != ""){
   suffix = paste0(suffix,"_",identifier)
 }
