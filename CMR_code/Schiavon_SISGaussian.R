@@ -8,13 +8,17 @@ library(pgdraw)
 library(calculus)
 library(matrixStats)
 library(LaplacesDemon)
+library(truncnorm) # for truncated normal for sampling lod
 
 Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,  
                     continuous_X = NULL ,  kinit = NULL, kmax = NULL,
                     b0=1, b1=5*10^(-4), start_adapt = 50, 
                     nrun, burn=round(nrun/4), thin = 1, 
                     output = "all", my_seed = 6784, std=T,
-                    n.predict = 0){
+                    #### LOD PREDICTION
+                    which.lod = NA,
+                    row.ind.lod = NA,
+                    lod = NA){
   
   # set seed
   set.seed(my_seed)
@@ -85,6 +89,13 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   
   Plam = diag( rgamma(k, a_theta, b_theta) )    # precision matrix of lambda star
   
+  if (!any(is.na(which.lod))){ ### bad- writing for my fake example where each column has same # of missingness
+    n.lod = length(row.ind.lod)
+    y.lod = matrix(NA,nrow = n.lod,ncol=p)
+  } else{
+    n.lod = 0
+    y.lod = NA
+  }
   
   # --- Allocate output object memory --- #
   if(any(output %in% "covMean")) COVMEAN = matrix(0, nrow = p, ncol = p)
@@ -101,7 +112,8 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   if(any(output %in% "numFactors")) runtime = NULL
   if(any(output %in% "factMean")) FACTMEAN = matrix(0, nrow = n, ncol = kmax)
   if(any(output %in% "factSamples")) ETA = list()
-  if(any(output %in% "ystarMean")) YSTAR = matrix(0, nrow = n.predict, ncol = p)
+  # if(any(output %in% "ystarMean")) YSTAR = matrix(0, nrow = n.predict, ncol = p)
+  if(any(output %in% "ylodMean")) YLOD = matrix(0, nrow = n.lod, ncol = p)
   ind = 1
   
   
@@ -111,6 +123,26 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   
   t0 = Sys.time()
   for (i in 1:nrun){
+    
+    # -- 0.Sample values below lod -- #
+    if ( n.lod>0){
+      for (i in row.ind.lod){
+        
+        ind_zz = which(which.lod[i,] == 1)
+        
+        mu_zz = c(Lambda[ind_zz,] %*% eta[i,])
+        d_sqrt_zz = 1/ps[ind_zz] |> sqrt()
+        lod_zz = lod[ind_zz]
+        
+        temp = sapply(1:length(ind_zz), function(j)
+          rtruncnorm(1,b = lod_zz[j],
+                     mean = mu_zz[j],
+                     sd = d_sqrt_zz[j]))
+        
+        Y[i,ind_zz] = y.lod[which(row.ind.lod==i),ind_zz] = temp
+        
+      }
+    }
     
     
     # -- 1. Update eta -- #
@@ -279,9 +311,8 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
       if(any(output %in% "numFactors")) K[ind] = kstar
       if(any(output %in% "factMean")) FACTMEAN = FACTMEAN + eta_mean/sp
       if(any(output %in% "factSamples")) ETA[[ind]] = eta 
-      if(any(output %in% "ystarMean")) YSTAR = YSTAR + 
-        t(sapply(1:n.predict,function(j)rmvnorm(rep(0,p),Omega))) / sp
-      
+      if(any(output %in% "ylodMean")) YLOD = YLOD + y.lod/sp
+
       ind = ind + 1
     }
     
@@ -353,7 +384,7 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
     if(x == "time") return(runtime)
     if(x == "factMean") return(FACTMEAN)
     if(x == "factSamples") return(ETA)
-    if(x == "ystarMean") return(YSTAR)
+    if(x == "ylodMean") return(YLOD)
   })
   names(out) = output
   out[["model_prior"]] ="SIS"

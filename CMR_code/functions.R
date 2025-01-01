@@ -1,5 +1,5 @@
-library(LaplacesDemon) # for dmvt (multivariate Student's t) for cusp
-
+library(truncnorm) # for truncated normal for sampling lod
+library(LaplacesDemon) # for LaplacesDemon::dmvt (multivariate Student's t) for cusp
 ##########################################################
 ### Covariance Meta Regression Model Gibbs Sampler- CMR_GS
 ## data
@@ -450,7 +450,7 @@ cusp_factor_adapt <- function(y,my_seed,N_sampl,alpha,a_sig,b_sig,a_theta,b_thet
     lhd_slab<-rep(0,H[t-1])
     for (h in 1:H[t-1]){
       lhd_spike[h]<-exp(sum(log(dnorm(Lambda_post[[t]][,h], mean = 0, sd = theta_inf^(1/2), log = FALSE))))
-      lhd_slab[h]<-dmvt(x=Lambda_post[[t]][,h], mu=rep(0,p), S=(b_theta/a_theta)*diag(p), df=2*a_theta)
+      lhd_slab[h]<-LaplacesDemon::dmvt(x=Lambda_post[[t]][,h], mu=rep(0,p), S=(b_theta/a_theta)*diag(p), df=2*a_theta)
       prob_h<-w_post[[t-1]]*c(rep(lhd_spike[h],h),rep(lhd_slab[h],H[t-1]-h))
       if (sum(prob_h)==0){
         prob_h<-c(rep(0,H[t-1]-1),1)
@@ -758,8 +758,8 @@ ShrinkSep_GS = function(Y,p1,p2,
     ## sample nu and sigi jointly
     ## sample nu
     nu.star = reflect(sample((nu - nu.delta):(nu + nu.delta),1),p+2)
-    R = dmvT(Y,nu.star-p+1,0,Vi,Vi.inv,log=TRUE) - 
-      dmvT(Y,nu-p+1,0,Vi,Vi.inv,log=TRUE) +
+    R = LaplacesDemon::dmvt(Y,nu.star-p+1,0,Vi,Vi.inv,log=TRUE) - 
+      LaplacesDemon::dmvt(Y,nu-p+1,0,Vi,Vi.inv,log=TRUE) +
       dnbinom(nu.star - (p+2),DF.SIZE,DF.PROB,log=TRUE) -
       dnbinom(nu - (p+2),DF.SIZE,DF.PROB,log=TRUE)
     ## if u<r, set nu to be nu.star
@@ -874,7 +874,11 @@ CMR_cusp_GS = function(Y,X = NA,
                        #### CUSP PARAMETERS
                        alpha = round(k/2), # prior expected number of active factors
                        a.theta = 2, b.theta = 2, # prior IG parameters on nu
-                       theta.inf = 0.05){
+                       theta.inf = 0.05,
+                       #### LOD PREDICTION
+                       which.lod = NA,
+                       row.ind.lod = NA,
+                       lod = NA){
   
   set.seed(my.seed)
   
@@ -935,7 +939,15 @@ CMR_cusp_GS = function(Y,X = NA,
     return(omega)
   }
   omega = omega.function(nu)
+  if (!any(is.na(which.lod))){ ### bad- writing for my fake example where each column has same # of missingness
+    n.lod = length(row.ind.lod)
+    y.lod = matrix(0,nrow = n.lod,ncol=p)
+  } else{
+    n.lod = 0
+    y.lod = NA
+  }
   ###########################
+  
   
   ###########################
   ## create storage 
@@ -955,6 +967,7 @@ CMR_cusp_GS = function(Y,X = NA,
     ds.out = array(NA,dim=c(n.save.out,p))
     Gamma.out = array(NA,dim=c(n.save.out,(q)*k))
     vars.out = array(NA,dim=c(n.save.out,1)) #for tau2
+    y.lod.out = array(NA,dim=c(n.save.out,n.lod*p))
   }
   
   ###########################
@@ -968,6 +981,27 @@ CMR_cusp_GS = function(Y,X = NA,
   ## GS
   tic = Sys.time()
   for ( s in 1:S ){
+    
+    ## sample y.lod
+    # sample values below LOD from truncated normal full conditional
+    if ( n.lod>0){
+      for (i in row.ind.lod){
+        
+        ind_zz = which(which.lod[i,] == 1)
+        
+        mu_zz = c(Lambda[ind_zz,] %*% eta[i,])
+        d_sqrt_zz = ds[ind_zz] |> sqrt()
+        lod_zz = lod[ind_zz]
+        
+        temp = sapply(1:length(ind_zz), function(j)
+          rtruncnorm(1,b = lod_zz[j],
+                     mean = mu_zz[j],
+                     sd = d_sqrt_zz[j]))
+        
+        Y[i,ind_zz] = y.lod[which(row.ind.lod==i),ind_zz] = temp
+        
+      }
+    }
     
     ## sample etais
     R = t(Lambda) %*% D.inv
@@ -1013,7 +1047,7 @@ CMR_cusp_GS = function(Y,X = NA,
     lhd_slab<-rep(0,k)
     for (h in 1:k){
       lhd_spike[h]<-exp(sum(log(dnorm(Lambda[,h], mean = 0, sd = theta.inf^(1/2), log = FALSE))))
-      lhd_slab[h]<-dmvt(x=Lambda[,h], mu=rep(0,p), S=(b.theta/a.theta)*(XXt + tau2 * D), 
+      lhd_slab[h]<-LaplacesDemon::dmvt(x=Lambda[,h], mu=rep(0,p), S=(b.theta/a.theta)*(XXt + tau2 * D), 
                         df=2*a.theta)
       pi<-omega*c(rep(lhd_spike[h],h),rep(lhd_slab[h],k-h))
       if (sum(pi)==0){
@@ -1066,6 +1100,7 @@ CMR_cusp_GS = function(Y,X = NA,
         Gamma.out[index,] = c(Gamma)
         vars.out[index,] = c(tau2) #for tau2 
         cov.shrinkto.inv.out[index,] = c(qr.solve(cov.shrinkto))
+        y.lod.out[index,] = c(y.lod)
         
         index = index + 1
       }
@@ -1084,6 +1119,8 @@ CMR_cusp_GS = function(Y,X = NA,
       Gamma.out[s,] = c(Gamma)
       vars.out[s,] = c(tau2) #for tau2
       cov.shrinkto.inv.out[s,] = c(qr.solve(cov.shrinkto))
+      y.lod.out[index,] = c(y.lod)
+      
       
     } else if (save.all == "ICO"){
       cov.temp = Lambda %*% t(Lambda) + D
@@ -1108,7 +1145,8 @@ CMR_cusp_GS = function(Y,X = NA,
                     "D" = ds.out,
                     "Gamma" = Gamma.out,
                     "vars" = vars.out,
-                    "runtime" = runtime)
+                    "runtime" = runtime,
+                    "y.lod" = y.lod.out)
     if (save.all == 1){
       func.out = func.out #c(func.out,list("out2" = out2))
     }
