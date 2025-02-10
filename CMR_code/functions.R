@@ -878,7 +878,10 @@ CMR_cusp_GS = function(Y,X = NA,
                        #### LOD PREDICTION
                        which.lod = NA,
                        row.ind.lod = NA,
-                       lod = NA){
+                       lod = NA,
+                       #### GEN. RIDGE VARIABLE SELECTION
+                       which.cov.group = NA
+                       ){
   
   set.seed(my.seed)
   
@@ -948,6 +951,19 @@ CMR_cusp_GS = function(Y,X = NA,
   }
   ###########################
   
+  ###########################
+  ## organize shit for generalized lasso
+  L = L.inv = eye(q)
+  if ( !any(is.na(which.cov.group)) ){
+    q.tilde = table(which.cov.group)
+    n.q.tilde = length(q.tilde)
+    ls = rep(1,n.q.tilde)
+  } else {
+    n.q.tilde = 1
+    ls = 1
+  }
+  ###########################
+  
   
   ###########################
   ## create storage 
@@ -968,6 +984,7 @@ CMR_cusp_GS = function(Y,X = NA,
     Gamma.out = array(NA,dim=c(n.save.out,(q)*k))
     vars.out = array(NA,dim=c(n.save.out,1)) #for tau2
     y.lod.out = array(NA,dim=c(n.save.out,n.lod*p))
+    ls.out = array(NA,dim=c(n.save.out,n.q.tilde))
   }
   
   ###########################
@@ -1029,7 +1046,7 @@ CMR_cusp_GS = function(Y,X = NA,
     
     ## sample Gamma
     R = t(X) %*% D.inv / tau2
-    S.gamma.inv = qr.solve(R %*% X + eye(q))
+    S.gamma.inv = qr.solve(R %*% X + L.inv)
     M.gamma = R %*% Lambda
     Gamma = rmatnorm(S.gamma.inv %*% M.gamma, V = Theta, U = S.gamma.inv)
     
@@ -1043,11 +1060,13 @@ CMR_cusp_GS = function(Y,X = NA,
     
     ### CUSP- code adapted from https://github.com/siriolegramanti/CUSP/blob/master/cusp.R
     ## sample z
+    XLXt = X %*% L %*% t(X)
     lhd_spike<-rep(0,k)
     lhd_slab<-rep(0,k)
     for (h in 1:k){
       lhd_spike[h]<-exp(sum(log(dnorm(Lambda[,h], mean = 0, sd = theta.inf^(1/2), log = FALSE))))
-      lhd_slab[h]<-LaplacesDemon::dmvt(x=Lambda[,h], mu=rep(0,p), S=(b.theta/a.theta)*(XXt + tau2 * D), 
+      lhd_slab[h]<-LaplacesDemon::dmvt(x=Lambda[,h], mu=rep(0,p), S=(b.theta/a.theta)*
+                                         (XLXt + tau2 * D), 
                         df=2*a.theta)
       pi<-omega*c(rep(lhd_spike[h],h),rep(lhd_slab[h],k-h))
       if (sum(pi)==0){
@@ -1076,10 +1095,30 @@ CMR_cusp_GS = function(Y,X = NA,
         theta.inv[h] <- 
           rgamma(n = 1,
                  shape = a.theta + 0.5*p,
-                 rate = b.theta + 0.5*t(Lambda[,h]) %*% solve(XXt + tau2 * D) %*% Lambda[,h])
+                 rate = b.theta + 0.5*t(Lambda[,h]) %*% solve(XLXt + tau2 * D) %*% Lambda[,h])
       }
     }
     Theta = diag(1/theta.inv); Theta.inv = diag(theta.inv)
+    
+    
+    ## sample ls
+    if (!any(is.na(which.cov.group))){
+      for (j in 1:n.q.tilde){
+        Gamma.tilde = Gamma[which.cov.group == j,,drop=F]
+        ls[j] = 1/rgamma(1,
+                         (1+k*q.tilde[j])/2,
+                         (1 + mat_trace(Gamma.tilde %*% Theta.inv %*% t(Gamma.tilde))/2)
+        )
+        if (sum(which.cov.group == j)>1){
+          diag(L[which.cov.group == j,which.cov.group == j]) = ls[j]
+          diag(L.inv[which.cov.group == j,which.cov.group == j]) = 1/ls[j]
+        } else if (sum(which.cov.group == j)==1){
+          L[which.cov.group == j,which.cov.group == j]  = ls[j]
+          L.inv[which.cov.group == j,which.cov.group == j]  = 1/ls[j]
+        }
+        
+      }
+    }
     
     
     
@@ -1101,6 +1140,7 @@ CMR_cusp_GS = function(Y,X = NA,
         vars.out[index,] = c(tau2) #for tau2 
         cov.shrinkto.inv.out[index,] = c(qr.solve(cov.shrinkto))
         y.lod.out[index,] = c(y.lod)
+        ls.out[index,] = c(ls)
         
         index = index + 1
       }
@@ -1120,6 +1160,7 @@ CMR_cusp_GS = function(Y,X = NA,
       vars.out[s,] = c(tau2) #for tau2
       cov.shrinkto.inv.out[s,] = c(qr.solve(cov.shrinkto))
       y.lod.out[index,] = c(y.lod)
+      ls.out[index,] = c(ls)
       
       
     } else if (save.all == "ICO"){
@@ -1146,7 +1187,8 @@ CMR_cusp_GS = function(Y,X = NA,
                     "Gamma" = Gamma.out,
                     "vars" = vars.out,
                     "runtime" = runtime,
-                    "y.lod" = y.lod.out)
+                    "y.lod" = y.lod.out,
+                    "ls" = ls.out)
     if (save.all == 1){
       func.out = func.out #c(func.out,list("out2" = out2))
     }

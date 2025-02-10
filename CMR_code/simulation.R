@@ -7,7 +7,7 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = FALSE
-cov.method = "eye" ## options: eye, cor9, comSym3groups, kron
+cov.method = "kron" ## options: eye, cor9, comSym3groups, kron
 identifier = "saveall"
 ####################################
 

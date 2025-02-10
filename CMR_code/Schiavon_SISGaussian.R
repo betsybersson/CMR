@@ -91,7 +91,7 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   
   if (!any(is.na(which.lod))){ ### bad- writing for my fake example where each column has same # of missingness
     n.lod = length(row.ind.lod)
-    y.lod = matrix(NA,nrow = n.lod,ncol=p)
+    y.lod = matrix(0,nrow = n.lod,ncol=p)
   } else{
     n.lod = 0
     y.lod = NA
@@ -114,6 +114,7 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
   if(any(output %in% "factSamples")) ETA = list()
   # if(any(output %in% "ystarMean")) YSTAR = matrix(0, nrow = n.predict, ncol = p)
   if(any(output %in% "ylodMean")) YLOD = matrix(0, nrow = n.lod, ncol = p)
+  if(any(output %in% "ylodSamples")) YLODSAMP = matrix(0, nrow = sp, ncol = n.lod*p)
   ind = 1
   
   
@@ -126,20 +127,20 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
     
     # -- 0.Sample values below lod -- #
     if ( n.lod>0){
-      for (i in row.ind.lod){
+      for (j in row.ind.lod){
         
-        ind_zz = which(which.lod[i,] == 1)
+        ind_zz = which(which.lod[j,] == 1)
         
-        mu_zz = c(Lambda[ind_zz,] %*% eta[i,])
+        mu_zz = c(Lambda[ind_zz,] %*% eta[j,])
         d_sqrt_zz = 1/ps[ind_zz] |> sqrt()
         lod_zz = lod[ind_zz]
         
-        temp = sapply(1:length(ind_zz), function(j)
-          rtruncnorm(1,b = lod_zz[j],
-                     mean = mu_zz[j],
-                     sd = d_sqrt_zz[j]))
+        temp = sapply(1:length(ind_zz), function(jj)
+          truncnorm::rtruncnorm(1,b = lod_zz[jj],
+                     mean = mu_zz[jj],
+                     sd = d_sqrt_zz[jj]))
         
-        Y[i,ind_zz] = y.lod[which(row.ind.lod==i),ind_zz] = temp
+        Y[j,ind_zz] = y.lod[which(row.ind.lod==j),ind_zz] = temp
         
       }
     }
@@ -312,7 +313,8 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
       if(any(output %in% "factMean")) FACTMEAN = FACTMEAN + eta_mean/sp
       if(any(output %in% "factSamples")) ETA[[ind]] = eta 
       if(any(output %in% "ylodMean")) YLOD = YLOD + y.lod/sp
-
+      if(any(output %in% "ylodSamples")) YLODSAMP[ind,] = c(y.lod)
+      
       ind = ind + 1
     }
     
@@ -385,6 +387,7 @@ Mcmc_SIS = function(Y, X=NA, as, bs, alpha, a_theta, b_theta, b_beta = 1,
     if(x == "factMean") return(FACTMEAN)
     if(x == "factSamples") return(ETA)
     if(x == "ylodMean") return(YLOD)
+    if(x == "ylodSamples") return(YLODSAMP)
   })
   names(out) = output
   out[["model_prior"]] ="SIS"

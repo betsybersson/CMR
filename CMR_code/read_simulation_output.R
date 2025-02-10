@@ -1,11 +1,11 @@
 library(xtable)
 cov.method = "kron"  #"comSym3groups"
-ps = c("9","16") #,"64"
+ps = c("8","15") #,"64"
 
 
 loss.out = c()
 for ( p.ind in 1:length(ps)){
-  file.name = paste0("output/SIM_",cov.method,"_p",ps[p.ind],".Rdata")
+  file.name = paste0("output/SIM_",cov.method,"_p",ps[p.ind],"_saveall_difTrueMatrix.Rdata")
   load(file.name)
   loss.temp = t(round(apply(loss.avg,1,function(j)j/min(j)),2))
   rownames(loss.temp) = paste0("p = ",ps[p.ind],
