@@ -7,7 +7,7 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = TRUE
-cov.method = "kron" ## options: eye, cor9, comSym3groups, kron
+cov.method = "continuous" ## options: eye, cor9, comSym3groups, kron, continuous
 identifier = "saveall"
 ####################################
 
@@ -15,7 +15,7 @@ identifier = "saveall"
 ## problem dimension parameters
 
 # number of variables
-p = 50
+p = 9
 # sample sizes to loop through
 Ns =  c(p+1,round(p*1.5),round(p*3))#,p*3 
 Ns.names = c("1","1.5","3") #,"3"
@@ -65,7 +65,7 @@ if (cov.method == "eye"){
   true.cov = eye(p)
 } else if (cov.method == "cor9"){
   true.cov = cor.mat(p,0.9)
-} else if (cov.method == "comSym3groups"){
+} else if (cov.method == "comSym3groups" || cov.method == "continuous"){
   
   p_l = round(c(4,6,8)/sum(4,6,8)*p)
   L = length(p_l)
@@ -89,7 +89,6 @@ if (cov.method == "eye"){
   for ( pl.ind in 1:length(p_l)){
     X[which_group==pl.ind,pl.ind] = 1
   }
-    
 } else if (cov.method == "kron"){
   p1 = round(p/5)
   p2 = round(p/p1)
@@ -103,6 +102,12 @@ if (cov.method == "eye"){
   # get design matrix
   X = getMatDesignMat(p1,p2)
   
+}
+### if in continuous case, use true cov same as with three groups, but change the meta covariate used
+if (cov.method == "continuous"){ 
+  set.seed(123)
+  X = matrix(rnorm(p,which_group,sd = 1/4),ncol=1)
+  set.seed(Sys.time())
 }
 # propagate filename suffix
 suffix = paste0(cov.method,"_p",p)
