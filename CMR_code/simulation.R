@@ -7,7 +7,7 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = TRUE
-cov.method = "continuous" ## options: eye, cor9, comSym3groups, kron, continuous
+cov.method = "continuous" ## options: continuous, eye, cor9, comSym3groups, kron, continuous
 identifier = "saveall"
 ####################################
 
@@ -108,6 +108,7 @@ if (cov.method == "continuous"){
   set.seed(123)
   X = matrix(rnorm(p,which_group,sd = 1/4),ncol=1)
   set.seed(Sys.time())
+  X = cbind(1,X) # add an intercept
 }
 # propagate filename suffix
 suffix = paste0(cov.method,"_p",p)
