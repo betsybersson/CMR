@@ -67,21 +67,37 @@ if (cov.method == "eye"){
   true.cov = cor.mat(p,0.9)
 } else if (cov.method == "comSym3groups" || cov.method == "continuous"){
   
+  # ### original approach
+  # p_l = round(c(4,6,8)/sum(4,6,8)*p)
+  # L = length(p_l)
+  # p = sum(p_l)
+  # which_group = rep(1:L,times = p_l)
+  # 
+  # lam = c(1,0,1,1)
+  # Lam = matrix(rep(lam,p_l[1]),nrow=p_l[1],byrow=T)
+  # lam2 = c(0,0,0,1)
+  # Lam2 = matrix(rep(lam2,p_l[2]),nrow=p_l[2],byrow=T)
+  # lam3 = c(1,4,0,0)
+  # Lam3 = matrix(rep(lam3,p_l[3]),nrow=p_l[3],byrow=T)
+  # Lam = rbind(Lam,Lam2,Lam3)
+  # cov = Lam %*% t(Lam)
+  # cov = cov + eye(p)
+  # true.cov = cov2cor(cov)
+  # eigen(true.cov)$val ## check invertible
+  
+  # get block correlation value map
+  val_map = matrix(c(
+    0.75, 0.3535534, 0.1178511,  # Group 1 correlations (Within G1, G1-G2, G1-G3)
+    0.3535534, 0.5, 0,  # Group 2 correlations (G2-G1, Within G2, G2-G3)
+    0.1178511, 0, 0.9444444   # Group 3 correlations (G3-G1, G3-G2, Within G3)
+  ), nrow = 3, byrow = TRUE)
+  
+  # get number of elements in group
   p_l = round(c(4,6,8)/sum(4,6,8)*p)
   L = length(p_l)
   p = sum(p_l)
-  which_group = rep(1:L,times = p_l)
-  
-  lam = c(1,0,1,1)
-  Lam = matrix(rep(lam,p_l[1]),nrow=p_l[1],byrow=T)
-  lam2 = c(0,0,0,1)
-  Lam2 = matrix(rep(lam2,p_l[2]),nrow=p_l[2],byrow=T)
-  lam3 = c(1,4,0,0)
-  Lam3 = matrix(rep(lam3,p_l[3]),nrow=p_l[3],byrow=T)
-  Lam = rbind(Lam,Lam2,Lam3)
-  cov = Lam %*% t(Lam)
-  cov = cov + eye(p)
-  true.cov = cov2cor(cov)
+  which_group = rep(1:L,times = p_l); group_sizes = table(which_group)
+  true.cov = build_blocked_cov(group_sizes, val_map)
   eigen(true.cov)$val ## check invertible
 
   # get design matrix

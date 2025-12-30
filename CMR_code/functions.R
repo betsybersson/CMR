@@ -908,9 +908,13 @@ CMR_cusp_GS = function(Y,X = NA,
   q = ncol(X)
   
   ## IG shape/rate parameters
-  a.d = b.d = 1
-  a.xi = b.xi = 1
-  a.tau = b.tau = 1
+  ### old/ everything i've used before 
+  # a.d = b.d = 1
+  # a.xi = b.xi = 1
+  # a.tau = b.tau = 1
+  
+  a.d = a.xi = a.tau = 2
+  b.d = b.xi = b.tau = 2/5
   
   ## CUSP parameters
   # a.theta = b.theta = 2
@@ -1065,14 +1069,15 @@ CMR_cusp_GS = function(Y,X = NA,
     lhd_slab<-rep(0,k)
     for (h in 1:k){
       lhd_spike[h]<-exp(sum(log(dnorm(Lambda[,h], mean = 0, sd = theta.inf^(1/2), log = FALSE))))
-      lhd_slab[h]<-LaplacesDemon::dmvt(x=Lambda[,h], mu=rep(0,p), S=(b.theta/a.theta)*
-                                         (XLXt + tau2 * D), 
+      ## numerical issue - force to be symmetric
+      tempS = (b.theta/a.theta)*(XLXt + tau2 * D)
+      tempS[lower.tri(tempS)] <- t(tempS)[lower.tri(tempS)]
+      lhd_slab[h]<-LaplacesDemon::dmvt(x=Lambda[,h], mu=rep(0,p), S=tempS, 
                         df=2*a.theta)
       pi<-omega*c(rep(lhd_spike[h],h),rep(lhd_slab[h],k-h))
       if (sum(pi)==0){
         pi<-c(rep(0,k-1),1)
-      }
-      else{
+      } else {
         pi<-pi/sum(pi)
       }
       z[h] <- c(1:k)%*%rmultinom(n=1, size=1, prob=pi)
@@ -1203,3 +1208,49 @@ CMR_cusp_GS = function(Y,X = NA,
   ###########################
   
 } # end function
+##########################################################
+### Helper function for comSym3groups regime to get true cov
+##########################################################
+build_blocked_cov <- function(new_sizes, block_vals) {
+  # new_sizes: A vector of integers (e.g., c(3, 1, 4))
+  # block_vals: A k x k matrix where k = length(new_sizes).
+  #             - entry [i, i] is the correlation WITHIN Group i
+  #             - entry [i, j] is the correlation BETWEEN Group i and j
+  
+  n_grps <- length(new_sizes)
+  
+  # Validation
+  if (nrow(block_vals) != n_grps || ncol(block_vals) != n_grps) {
+    stop("Dimensions of 'block_vals' must match the length of 'new_sizes'.")
+  }
+  
+  # 1. Setup dimensions
+  q <- sum(new_sizes)
+  sigma_q <- matrix(0, nrow = q, ncol = q)
+  
+  # Calculate start/end indices for the new matrix
+  ends <- cumsum(new_sizes)
+  starts <- c(1, head(ends, -1) + 1)
+  
+  # 2. Fill the blocks
+  for (i in 1:n_grps) {
+    for (j in 1:n_grps) {
+      
+      # Determine coordinate ranges in the new matrix
+      rows <- starts[i]:ends[i]
+      cols <- starts[j]:ends[j]
+      
+      # Get the value intended for this block relation
+      val <- block_vals[i, j]
+      
+      # Fill the entire block with this value
+      sigma_q[rows, cols] <- val
+    }
+  }
+  
+  # 3. Enforce the diagonal constraint
+  # Since you specified 1s along the diagonal:
+  diag(sigma_q) <- 1
+  
+  return(sigma_q)
+}
