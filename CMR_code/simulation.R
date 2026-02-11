@@ -6,16 +6,16 @@ library(doParallel)
 
 ####################################
 ## helpers
-on.server = TRUE
-cov.method = "continuous" ## options: continuous, eye, cor9, comSym3groups, kron, continuous
-identifier = "saveall"
+on.server = T
+cov.method = "updatedGroup" ## options: continuous, eye, cor9, comSym3groups, kron, continuous
+identifier = "saveall_dec30_TEMP"
 ####################################
 
 ####################################
 ## problem dimension parameters
 
 # number of variables
-p = 9
+p = 50
 # sample sizes to loop through
 Ns =  c(p+1,round(p*1.5),round(p*3))#,p*3 
 Ns.names = c("1","1.5","3") #,"3"
@@ -118,6 +118,25 @@ if (cov.method == "eye"){
   # get design matrix
   X = getMatDesignMat(p1,p2)
   
+} else if (cov.method == "updatedGroup"){
+  val_map = matrix(c(
+    0.75, -0.20,  0.14,  # Group 1 (Modified off-diagonals for safety)
+    -0.20,  0.50,  0.60,  # Group 2 (Lowered G2-G3 from 0.7 to 0.4)
+    0.14,  0.60,  0.94
+  ), nrow = 3, byrow = TRUE)
+  # get number of elements in group
+  p_l = round(c(4,6,8)/sum(4,6,8)*p)
+  L = length(p_l)
+  p = sum(p_l)
+  which_group = rep(1:L,times = p_l); group_sizes = table(which_group)
+  true.cov = build_blocked_cov(group_sizes, val_map)
+  eigen(true.cov)$val ## check invertible
+  
+  # get design matrix
+  X = matrix(0, nrow = p, ncol = length(p_l))
+  for ( pl.ind in 1:length(p_l)){
+    X[which_group==pl.ind,pl.ind] = 1
+  }
 }
 ### if in continuous case, use true cov same as with three groups, but change the meta covariate used
 if (cov.method == "continuous"){ 
@@ -135,10 +154,14 @@ if (identifier != ""){
 
 ####################################
 ## run simulation
-cores = detectCores()
+if (on.server == T){
+  cores = detectCores()
+} else {
+  cores = detectCores() - 1
+}
 loss.avg = toc.avg = c() #matrix(NA,ncol = length(Ks)*2 + 2, nrow = length(Ns))
 loss.mat = list()
-for ( n.ind in 1:length(Ns) ){
+for ( n.ind in 1:length(Ns) ){ 
     
   n = Ns[n.ind]
 
@@ -209,11 +232,11 @@ for ( n.ind in 1:length(Ns) ){
       #                     my.seed = sim.ind + 300 + k.ind)
       #   output[[length(output)+1]] = qr.solve(matrix(colMeans(out.cmr$cov.inv),ncol = p)) ## stein estimator
       #   toc[[length(toc)+1]]  = out.cmr$runtime
-      #   
+      #
       #   # name based on value of K
       #   names(output)[length(output)+1] = names(toc)[length(output)+1] = paste0("cmr.K",Ks[k.ind],".intercept")
       # }
-      
+
       ## run CMR GS with CUSP
       out.cmr.cusp  = CMR_cusp_GS(Y,X = NA,
                                   k = ceiling((p-1)/2),
@@ -222,12 +245,12 @@ for ( n.ind in 1:length(Ns) ){
                                   my.seed = sim.ind + 400,
                                   alpha = DUNSON_ALPHA,
                                   a.theta = 1/2, b.theta = 1/2)
-      
+
       output$MR.I = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
       toc$MR.I  = out.cmr.cusp$runtime
     }
     ####################################
-    
+
     ####################################
     ## run intercept kron stuff if matrix-variate data
     if (cov.method == "kron"){
@@ -236,7 +259,7 @@ for ( n.ind in 1:length(Ns) ){
                                    de.meaned = T,my.seed = sim.ind + 500)
       output$kron.mle = cov.kron.temp$Cov
       toc$kron.mle = cov.kron.temp$runtime
-      
+
       # # shrink to kron
       # kron.shrink.temp = ShrinkSep_GS(Y,p1,p2,
       #                                 S = S.simple,
@@ -246,7 +269,7 @@ for ( n.ind in 1:length(Ns) ){
       # toc$kron = kron.shrink.temp$runtime
     }
     ####################################
-    
+
     ####################################
     ## sample covariance
     if ( p <= n){
@@ -318,6 +341,12 @@ for ( n.ind in 1:length(Ns) ){
 
   print(paste0("Finished running the scenario for N = ", n,"!!!!!!!!!"))
 
+  ####################################
+  ## save output
+  output.filename = paste0("./output/SIM_",suffix,".Rdata")
+  save(loss.avg,toc.avg,loss.mat,file = output.filename)
+  ####################################
+  
 }
 
 colnames(loss.avg) = colnames(toc.avg) = names(parallel.out[1,][[1]])
