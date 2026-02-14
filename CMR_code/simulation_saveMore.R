@@ -6,7 +6,7 @@ library(doParallel)
 
 ####################################
 ## helpers
-on.server = F
+on.server = T
 cov.method = "updatedGroup" ## options: continuous, eye, cor9, comSym3groups, kron, continuous
 identifier = "feb"
 ####################################
@@ -34,8 +34,8 @@ X = NA
 
 ####################################
 ## gibbs sampler variables
-S.fancy = 20#20000
-burnin.fancy = 10#10000
+S.fancy = 20000
+burnin.fancy = 10000
 
 S.simple = 11000
 burnin.simple = 1000
