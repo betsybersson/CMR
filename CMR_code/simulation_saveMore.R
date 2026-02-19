@@ -170,11 +170,13 @@ for ( n.ind in 1:length(Ns)){  #1:length(Ns)
   } else {
     cl <- makeCluster(cores[1] - 1)  # dont overload your computer
   }
-  registerDoParallel(cl)
+ ## registerDoParallel(cl)
   
-  ###
-  parallel.out <- foreach(sim.ind=1:sim, .combine=cbind, .packages = c("parallel","LaplacesDemon","pgdraw","calculus","matrixStats")) %dopar% {
-    
+  ####
+##  parallel.out <- foreach(sim.ind=1:sim, .combine=cbind, .packages = c("parallel","LaplacesDemon","pgdraw","calculus","matrixStats")) %dopar% {
+
+  for (sim.ind in 1:sim){
+
     ## output storage
     output = toc = list()
     
@@ -296,11 +298,12 @@ for ( n.ind in 1:length(Ns)){  #1:length(Ns)
                  "; n ind: ", n,
                  "!!!!!!!!!!!!!")), file = "progress_log.txt", append = TRUE)
     
+    print(paste0("finished running and saving: Sim ind:", sim.ind,";n ind:",n,"!!!!"))
     
   }
   
   #stop cluster
-  stopCluster(cl)
+  #stopCluster(cl)
   
   print(paste0("Finished running and saving all of:",
                "n ind: ", n,
