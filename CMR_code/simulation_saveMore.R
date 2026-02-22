@@ -34,8 +34,8 @@ X = NA
 
 ####################################
 ## gibbs sampler variables
-S.fancy = 4#20000
-burnin.fancy = 2#10000
+S.fancy = 20000
+burnin.fancy = 10000
 
 S.simple = 11000
 burnin.simple = 1000
