@@ -17,10 +17,10 @@ identifier = "feb"
 # number of variables
 p = 50
 # sample sizes to loop through
-Ns =  c(round(p*1.5),round(p*3)) ### c(p+1,round(p*1.5),round(p*3)) 
-Ns.names = c("1.5","3") ###c("1","1.5","3") 
+Ns =  c(round(p*3)) ### c(p+1,round(p*1.5),round(p*3)) 
+Ns.names = c("3") ###c("1","1.5","3") 
 # low dimension
-Ks = "" # c(1,3,5)
+Ks = ""
 ####################################
 
 print(paste0("Running the following scenario: ",
@@ -175,7 +175,7 @@ for ( n.ind in 1:length(Ns)){  #1:length(Ns)
   ####
 ##  parallel.out <- foreach(sim.ind=1:sim, .combine=cbind, .packages = c("parallel","LaplacesDemon","pgdraw","calculus","matrixStats")) %dopar% {
 
-  for (sim.ind in 6:sim){
+  for (sim.ind in 13:sim){ ## 1:5
 
     ## output storage
     output = toc = list()
