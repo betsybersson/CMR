@@ -7,7 +7,7 @@ library(doParallel)
 ####################################
 ## helpers
 on.server = T
-cov.method = "updatedGroup" ## options: continuous, eye, cor9, comSym3groups, kron, continuous
+cov.method = "updatedGroup_continuous" ## options: updatedGroup, eye, cor9, comSym3groups, kron, continuous
 identifier = "feb"
 ####################################
 
@@ -118,7 +118,7 @@ if (cov.method == "eye"){
   # get design matrix
   X = getMatDesignMat(p1,p2)
   
-} else if (cov.method == "updatedGroup"){
+} else if (cov.method == "updatedGroup" || cov.method == "updatedGroup_continuous" ){
   val_map = matrix(c(
     0.75, -0.20,  0.14,  # Group 1 (Modified off-diagonals for safety)
     -0.20,  0.50,  0.60,  # Group 2 (Lowered G2-G3 from 0.7 to 0.4)
@@ -139,7 +139,7 @@ if (cov.method == "eye"){
   }
 }
 ### if in continuous case, use true cov same as with three groups, but change the meta covariate used
-if (cov.method == "continuous"){ 
+if (cov.method == "continuous" || cov.method == "updatedGroup_continuous"){ 
   set.seed(123)
   X = matrix(rnorm(p,which_group,sd = 1/4),ncol=1)
   set.seed(Sys.time())
@@ -175,8 +175,8 @@ for ( n.ind in 1:length(Ns)){  #1:length(Ns)
   ####
 ##  parallel.out <- foreach(sim.ind=1:sim, .combine=cbind, .packages = c("parallel","LaplacesDemon","pgdraw","calculus","matrixStats")) %dopar% {
 
-  for (sim.ind in 13:sim){ ## 1:5
-
+  for (sim.ind in 1:sim){
+  
     ## output storage
     output = toc = list()
     
@@ -203,75 +203,79 @@ for ( n.ind in 1:length(Ns)){  #1:length(Ns)
     toc$MR.O  = out.cmr.cusp$runtime
     ####################################
     
-    ####################################
-    ## run intercept CMR GS if you haven't
-    if (!all(is.na(X))){
-
-      ## run CMR GS with CUSP
-      out.cmr.cusp  = CMR_cusp_GS(Y,X = NA,
-                                  k = ceiling((p-1)/2),
-                                  S = S.fancy,
-                                  burnin = burnin.fancy,
-                                  my.seed = sim.ind + 400,
-                                  alpha = DUNSON_ALPHA,
-                                  a.theta = 1/2, b.theta = 1/2)
+    if (cov.method != "updatedGroup" || cov.method != "updatedGroup_continuous"){
+    
+      ####################################
+      ## run intercept CMR GS if you haven't
+      if (!all(is.na(X))){
+  
+        ## run CMR GS with CUSP
+        out.cmr.cusp  = CMR_cusp_GS(Y,X = NA,
+                                    k = ceiling((p-1)/2),
+                                    S = S.fancy,
+                                    burnin = burnin.fancy,
+                                    my.seed = sim.ind + 400,
+                                    alpha = DUNSON_ALPHA,
+                                    a.theta = 1/2, b.theta = 1/2)
+        
+        output$MR.I = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
+        toc$MR.I  = out.cmr.cusp$runtime
+      }
+      ####################################
+    
+      ####################################
+      ## run intercept kron stuff if matrix-variate data
+      if (cov.method == "kron"){
+        # get kron MLE from data
+        cov.kron.temp = cov.kron.mle(vec.inv.array(Y,p1,p2),
+                                     de.meaned = T,my.seed = sim.ind + 500)
+        output$kron.mle = cov.kron.temp$Cov
+        toc$kron.mle = cov.kron.temp$runtime
       
-      output$MR.I = qr.solve(matrix(colMeans(out.cmr.cusp$cov.inv),ncol = p)) ## stein estimator
-      toc$MR.I  = out.cmr.cusp$runtime
+      }
+      ####################################
+      
+      ####################################
+      ## sample covariance
+      if ( p <= n){
+        output$MLE = cov.mle(Y)
+        toc$MLE = 0
+      }
+      ####################################
+      
+      
+      ####################################
+      ## run competitor GS- CUSP
+      out.cusp = cusp_factor_adapt(Y,
+                                   my_seed =  sim.ind + 600,
+                                   N_sampl = S.fancy,
+                                   burnin = burnin.fancy,
+                                   alpha = DUNSON_ALPHA,
+                                   a_sig = 1, b_sig = 1,
+                                   a_theta = 2, b_theta = 2, theta_inf = 0.05,
+                                   start_adapt = S.fancy, Hmax = p + 1, # don't adapt
+                                   alpha0 = -1, alpha1 = -5*10^(-4))
+      output$CUSP = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
+      toc$CUSP = out.cusp$runtime
+      ####################################
+    
+      ####################################
+      ## run competitor GS- SIS
+      out.sis = Mcmc_SIS(Y,X,
+                         as = 1, bs = 1, alpha = DUNSON_ALPHA,
+                         a_theta = 2, b_theta = 2,
+                         nrun = S.fancy, burn = burnin.fancy,
+                         thin = 1,
+                         start_adapt = S.fancy, kmax = p + 1, # don't adapt
+                         my_seed =  sim.ind + 700,
+                         output = c("covSamples", "covSamplesInv","time"))
+      output$SIS = qr.solve(matrix(colMeans(out.sis$covSamplesInv),ncol = p)) ## stein estimator #
+      # output$sis =  out.sis$covMean
+      toc$SIS = out.sis$time
+      ####################################
+      
     }
-    ####################################
-    
-    ####################################
-    ## run intercept kron stuff if matrix-variate data
-    if (cov.method == "kron"){
-      # get kron MLE from data
-      cov.kron.temp = cov.kron.mle(vec.inv.array(Y,p1,p2),
-                                   de.meaned = T,my.seed = sim.ind + 500)
-      output$kron.mle = cov.kron.temp$Cov
-      toc$kron.mle = cov.kron.temp$runtime
-    
-    }
-    ####################################
-    
-    ####################################
-    ## sample covariance
-    if ( p <= n){
-      output$MLE = cov.mle(Y)
-      toc$MLE = 0
-    }
-    ####################################
-    
-    
-    ####################################
-    ## run competitor GS- CUSP
-    out.cusp = cusp_factor_adapt(Y,
-                                 my_seed =  sim.ind + 600,
-                                 N_sampl = S.fancy,
-                                 burnin = burnin.fancy,
-                                 alpha = DUNSON_ALPHA,
-                                 a_sig = 1, b_sig = 1,
-                                 a_theta = 2, b_theta = 2, theta_inf = 0.05,
-                                 start_adapt = S.fancy, Hmax = p + 1, # don't adapt
-                                 alpha0 = -1, alpha1 = -5*10^(-4))
-    output$CUSP = qr.solve(matrix(colMeans(out.cusp$cov.inv),ncol = p)) ## stein estimator
-    toc$CUSP = out.cusp$runtime
-    ####################################
-    
-    ####################################
-    ## run competitor GS- SIS
-    out.sis = Mcmc_SIS(Y,X,
-                       as = 1, bs = 1, alpha = DUNSON_ALPHA,
-                       a_theta = 2, b_theta = 2,
-                       nrun = S.fancy, burn = burnin.fancy,
-                       thin = 1,
-                       start_adapt = S.fancy, kmax = p + 1, # don't adapt
-                       my_seed =  sim.ind + 700,
-                       output = c("covSamples", "covSamplesInv","time"))
-    output$SIS = qr.solve(matrix(colMeans(out.sis$covSamplesInv),ncol = p)) ## stein estimator #
-    # output$sis =  out.sis$covMean
-    toc$SIS = out.sis$time
-    ####################################
-    
+      
     ####################################
     ## get distance from each output and the truth
     loss = unlist(lapply(output,function(k)
